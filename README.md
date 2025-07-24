@@ -1,6 +1,6 @@
 # Clone optimism and checkout branch
 ```shell
-git submodule update optimism
+git submodule update --init --recursive
 ```
 
 # Edit .envrc
