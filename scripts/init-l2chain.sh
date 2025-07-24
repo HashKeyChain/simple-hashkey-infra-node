@@ -2,6 +2,9 @@
 
 source .envrc
 
+# go back if unnormal exit
+trap "git checkout develop && cd ${BASE_PATH}" EXIT INT KILL ERR
+
 cd $OP_NODE_PATH
 git checkout v1.13.2
 go run cmd/main.go genesis l2 \
@@ -12,4 +15,4 @@ go run cmd/main.go genesis l2 \
 --outfile.l2 $OP_GETH_GENESIS_FILE \
 --outfile.rollup $OP_NODE_ROLLUP_FILE
 
-cd $BASE_PATH
+git checkout develop && cd $BASE_PATH

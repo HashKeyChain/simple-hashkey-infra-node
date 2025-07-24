@@ -2,6 +2,9 @@
 
 source .envrc
 
+# go back if unnormal exit
+trap "git checkout develop && cd ${BASE_PATH}" EXIT INT KILL ERR
+
 # Create accounts and configs
 cd $CONTRACTS_BEDROCK_PATH
 git checkout op-contracts/v2.0.0-beta.2
@@ -15,4 +18,4 @@ cast send --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d
 cast send --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 $GS_PROPOSER_ADDRESS --value 2ether --rpc-url http://localhost:8545
 cast send --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 $GS_SEQUENCER_ADDRESS --value 2ether --rpc-url http://localhost:8545
 
-cd $BASE_PATH
+git checkout develop && cd $BASE_PATH

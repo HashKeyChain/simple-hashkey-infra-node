@@ -2,6 +2,9 @@
 
 source .envrc
 
+# go back if unnormal exit
+trap "git checkout develop && cd ${BASE_PATH}" EXIT INT KILL ERR
+
 # Build and deploy contracts
 cd $CONTRACTS_BEDROCK_PATH
 git checkout op-contracts/v2.0.0-beta.2
@@ -12,4 +15,4 @@ forge script scripts/Deploy.s.sol:Deploy --private-key $GS_ADMIN_PRIVATE_KEY --b
 export CONTRACT_ADDRESSES_PATH=$DEPLOYMENT_OUTFILE
 forge script scripts/L2Genesis.s.sol:L2Genesis --sig 'runWithStateDump()'
 
-cd $BASE_PATH
+git checkout develop && cd $BASE_PATH
