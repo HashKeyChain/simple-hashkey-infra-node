@@ -7,7 +7,7 @@ echo "op-node --l2=http://localhost:8651 --l2.jwt-secret=${BASE_PATH}/data/jwt.t
 
 op-node \
   --l2=http://localhost:8651 \
-  --l2.jwt-secret=${BASE_PATH}data/jwt.txt \
+  --l2.jwt-secret=${BASE_PATH}/data/jwt.txt \
   --sequencer.enabled \
   --sequencer.l1-confs=5 \
   --verifier.l1-confs=4 \
