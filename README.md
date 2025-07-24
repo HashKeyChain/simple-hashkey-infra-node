@@ -13,6 +13,11 @@ curl -L https://foundry.paradigm.xyz | bash
 foundryup --install stable
 ```
 
+* build binaries if necessary
+```shell
+bash scripts/build-binaries.sh
+```
+
 # Download submodules
 
 ```shell
