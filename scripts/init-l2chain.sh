@@ -3,7 +3,6 @@
 source .envrc
 
 cd $OP_NODE_PATH
-
 git checkout v1.13.2
 go run cmd/main.go genesis l2 \
 --deploy-config $DEPLOY_CONFIG_PATH \

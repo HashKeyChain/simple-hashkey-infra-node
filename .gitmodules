@@ -1,0 +1,3 @@
+[submodule "optimism"]
+	path = optimism
+	url = https://gitlab.hashquark.io/hashkey-l2/optimism.git

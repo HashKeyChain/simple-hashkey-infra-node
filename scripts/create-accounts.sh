@@ -2,9 +2,8 @@
 
 source .envrc
 
-cd $CONTRACTS_BEDROCK_PATH
-
 # Create accounts and configs
+cd $CONTRACTS_BEDROCK_PATH
 git checkout op-contracts/v2.0.0-beta.2
 sh scripts/getting-started/wallets.sh >> $BASE_PATH/.envrc
 cd $BASE_PATH && source .envrc && cd -
