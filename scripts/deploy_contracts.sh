@@ -2,18 +2,7 @@
 
 source .envrc
 
-# Create accounts and configs
 cd $CONTRACTS_BEDROCK_PATH
-git checkout op-contracts/v2.0.0-beta.2
-sh scripts/getting-started/wallets.sh >> $BASE_PATH/.envrc
-cd $BASE_PATH && source .envrc && cd -
-sh scripts/getting-started/config.sh
-
-# Send some ether to the accounts
-cast send --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 $GS_ADMIN_ADDRESS --value 2ether --rpc-url http://localhost:8545
-cast send --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 $GS_BATCHER_ADDRESS --value 2ether --rpc-url http://localhost:8545
-cast send --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 $GS_PROPOSER_ADDRESS --value 2ether --rpc-url http://localhost:8545
-cast send --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 $GS_SEQUENCER_ADDRESS --value 2ether --rpc-url http://localhost:8545
 
 # Build and deploy contracts
 forge install && forge build
@@ -22,3 +11,5 @@ forge script scripts/Deploy.s.sol:Deploy --private-key $GS_ADMIN_PRIVATE_KEY --b
 # Create l2chain genesis state and load in file.
 export CONTRACT_ADDRESSES_PATH=$DEPLOYMENT_OUTFILE
 forge script scripts/L2Genesis.s.sol:L2Genesis --sig 'runWithStateDump()'
+
+cd $BASE_PATH
