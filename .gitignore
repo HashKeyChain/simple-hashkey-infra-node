@@ -1,0 +1,7 @@
+# hashkey environment variables
+.envrc
+
+optimism
+
+# geth database dir
+data
