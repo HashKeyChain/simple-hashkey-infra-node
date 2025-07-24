@@ -2,7 +2,7 @@
 
 source .envrc
 
-op-proposer \
+bin/op-proposer \
   --poll-interval=12s \
   --rpc.port=8560 \
   --rollup-rpc=http://localhost:9545 \

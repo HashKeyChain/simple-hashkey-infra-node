@@ -69,12 +69,12 @@ export ETHERSCAN_API_KEY=
 export PRIVATE_KEY=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
 
 export BASE_PATH=$PWD
-export CONTRACT_ADDRESSES_PATH=""
-export CHAIN_ID=$L2_CHAIN_ID
+export CONTRACTS_BEDROCK_PATH=$BASE_PATH/optimism/packages/contracts-bedrock
+export OP_NODE_PATH=$BASE_PATH/optimism/op-node
 
 # contracts-bedrock relate paths
-export CONTRACTS_BEDROCK_PATH=$PWD/optimism/packages/contracts-bedrock
-export OP_NODE_PATH=$PWD/optimism/op-node
+export CONTRACT_ADDRESSES_PATH=""
+export CHAIN_ID=$L2_CHAIN_ID
 export DEPLOY_CONFIG_PATH=$CONTRACTS_BEDROCK_PATH/deploy-config/$DEPLOYMENT_CONTEXT.json
 export DEPLOYMENT_OUTFILE=$CONTRACTS_BEDROCK_PATH/deployments/artifact.json
 export STATE_DUMP_PATH=$CONTRACTS_BEDROCK_PATH/deployments/state-dump-latest.json

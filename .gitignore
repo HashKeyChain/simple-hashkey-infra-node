@@ -1,7 +1,8 @@
 # hashkey environment variables
 .envrc
 
-optimism
+# ignore binary files
+bin/*
 
 # geth database dir
 data

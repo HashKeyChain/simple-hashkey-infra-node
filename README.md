@@ -23,36 +23,36 @@ source .envrc
 
 # Run anvil
 ```shell
-sh scripts/run-anvil.sh
+bash scripts/run-anvil.sh
 ```
 
 # Create accounts and configs
 ```shell
-sh scripts/create-accounts.sh
+bash scripts/create-accounts.sh
 ```
 
 # Deploy L1 contracts
 ```shell
-sh scripts/deploy-contracts.sh
+bash scripts/deploy-contracts.sh
 ```
 
 # Create l2chain genesis file and rollup file.
 ```shell
-sh scripts/init-l2chain.sh
+bash scripts/init-l2chain.sh
 ```
 
 # Init and run op-geth
 ```shell
 # Init and run l2geth.
-sh scripts/run-l2geth.sh
+bash scripts/run-l2geth.sh
 ```
 
 # Start op-node
 ```shell
-sh scripts/run-op-node.sh
+bash scripts/run-op-node.sh
 ```
 
 # Start op-proposer
 ```shell
-sh scripts/run-op-proposer.sh
+bash scripts/run-op-proposer.sh
 ```
