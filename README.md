@@ -44,15 +44,15 @@ sh scripts/init-l2chain.sh
 # Init and run op-geth
 ```shell
 # Init and run l2geth.
-cd $BASE_PATH && sh scripts/run-l2geth.sh
+sh scripts/run-l2geth.sh
 ```
 
 # Start op-node
 ```shell
-cd $BASE_PATH && sh scripts/run-op-node.sh
+sh scripts/run-op-node.sh
 ```
 
 # Start op-proposer
 ```shell
-cd $BASE_PATH && sh scripts/run-op-proposer.sh
+sh scripts/run-op-proposer.sh
 ```
