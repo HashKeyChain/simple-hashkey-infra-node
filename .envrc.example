@@ -75,7 +75,7 @@ export CHAIN_ID=$L2_CHAIN_ID
 # contracts-bedrock relate paths
 export CONTRACTS_BEDROCK_PATH=$PWD/optimism/packages/contracts-bedrock
 export OP_NODE_PATH=$PWD/optimism/op-node
-export DEPLOY_CONFIG_PATH=$CONTRACTS_BEDROCK_PATH/deploy-config/getting-started.json
+export DEPLOY_CONFIG_PATH=$CONTRACTS_BEDROCK_PATH/deploy-config/$DEPLOYMENT_CONTEXT.json
 export DEPLOYMENT_OUTFILE=$CONTRACTS_BEDROCK_PATH/deployments/artifact.json
 export STATE_DUMP_PATH=$CONTRACTS_BEDROCK_PATH/deployments/state-dump-latest.json
 export OP_GETH_GENESIS_FILE=$CONTRACTS_BEDROCK_PATH/deployments/genesis.json
