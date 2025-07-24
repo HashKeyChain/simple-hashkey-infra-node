@@ -1,3 +1,6 @@
 [submodule "optimism"]
 	path = optimism
 	url = https://gitlab.hashquark.io/hashkey-l2/optimism.git
+[submodule "op-geth"]
+	path = op-geth
+	url = https://gitlab.hashquark.io/hashkey-l2/op-geth.git
