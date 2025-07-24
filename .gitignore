@@ -2,7 +2,6 @@
 .envrc
 
 optimism
-optimism/packages/contracts-bedrock/deployments/artifact.json
 
 # geth database dir
 data
