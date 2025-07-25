@@ -14,6 +14,7 @@ foundryup --install stable
 ```
 
 * build binaries if necessary
+
 ```shell
 bash scripts/build-binaries.sh
 ```
@@ -84,4 +85,10 @@ bash scripts/run-op-node.sh
 
 ```shell
 bash scripts/run-op-proposer.sh
+```
+
+# Run op-batcher
+
+```shell
+bash scripts/run-op-batcher.sh
 ```
