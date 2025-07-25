@@ -47,8 +47,9 @@ export L1_RPC_KIND=alchemy
 # RPC URL for the L1 network to interact with
 export L1_RPC_URL=http://localhost:8545
 export L2_RPC_URL=http://localhost:8645
+export OP_ROLLUP_PORT=9545
 export OP_BATCHER_PORT=9645
-export OP_NODE_RPC_URL=http://localhost:9545
+export OP_NODE_RPC_URL=http://localhost:$OP_ROLLUP_PORT
 export OP_BATCHER_RPC_URL=http://localhost:$OP_BATCHER_PORT
 
 # Salt used via CREATE2 to determine implementation addresses

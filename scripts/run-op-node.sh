@@ -13,6 +13,7 @@ op-node \
   --verifier.l1-confs=4 \
   --rollup.config=$OP_NODE_ROLLUP_FILE \
   --rpc.addr=0.0.0.0 \
+  --rpc.port=$OP_ROLLUP_PORT \
   --p2p.disable \
   --rpc.enable-admin \
   --p2p.sequencer.key=$GS_SEQUENCER_PRIVATE_KEY \
