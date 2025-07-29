@@ -6,7 +6,7 @@ source .envrc
 trap "git checkout develop && cd ${BASE_PATH}" EXIT INT KILL ERR
 
 cd $OP_NODE_PATH
-git checkout v1.13.2
+git checkout $HK_VERSE_BRANCH
 go run cmd/main.go genesis l2 \
 --deploy-config $DEPLOY_CONFIG_PATH \
 --l1-deployments $DEPLOYMENT_OUTFILE \

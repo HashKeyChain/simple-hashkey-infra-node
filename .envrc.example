@@ -52,6 +52,10 @@ export OP_BATCHER_PORT=9645
 export OP_NODE_RPC_URL=http://localhost:$OP_ROLLUP_PORT
 export OP_BATCHER_RPC_URL=http://localhost:$OP_BATCHER_PORT
 
+# Specified branches for the repositories.
+export HK_GETH_BRANCH=hk-geth
+export HK_VERSE_BRANCH=develop
+
 # Salt used via CREATE2 to determine implementation addresses
 # NOTE: If you want to deploy contracts from scratch you MUST reload this
 #       variable to ensure the salt is regenerated and the contracts are
@@ -75,8 +79,8 @@ export PRIVATE_KEY=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b7
 
 # base path, used for the project
 export BASE_PATH=$PWD
-export CONTRACTS_BEDROCK_PATH=$BASE_PATH/optimism/packages/contracts-bedrock
-export OP_NODE_PATH=$BASE_PATH/optimism/op-node
+export CONTRACTS_BEDROCK_PATH=$BASE_PATH/verse/packages/contracts-bedrock
+export OP_NODE_PATH=$BASE_PATH/verse/op-node
 export PATH=$PATH:$BASE_PATH/bin
 
 # contracts-bedrock relate paths

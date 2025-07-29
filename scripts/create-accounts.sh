@@ -7,7 +7,7 @@ trap "git checkout develop && cd ${BASE_PATH}" EXIT INT KILL ERR
 
 # Create accounts and configs
 cd $CONTRACTS_BEDROCK_PATH
-git checkout op-contracts/v2.0.0-beta.2
+git checkout $HK_VERSE_BRANCH
 sh scripts/getting-started/wallets.sh >> $BASE_PATH/.envrc
 cd $BASE_PATH && source .envrc && cd -
 sh scripts/getting-started/config.sh

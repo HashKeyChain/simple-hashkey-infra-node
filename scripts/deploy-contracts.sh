@@ -7,7 +7,7 @@ trap "git checkout develop && cd ${BASE_PATH}" EXIT INT KILL ERR
 
 # Build and deploy contracts
 cd $CONTRACTS_BEDROCK_PATH
-git checkout op-contracts/v2.0.0-beta.2
+git checkout $HK_VERSE_BRANCH
 forge install && forge build
 forge script scripts/Deploy.s.sol:Deploy --private-key $GS_ADMIN_PRIVATE_KEY --broadcast --rpc-url $L1_RPC_URL --slow
 
