@@ -21,12 +21,12 @@ op-geth \
   --http.vhosts="*" \
   --http.addr=0.0.0.0 \
   --http.port=8645 \
-  --http.api=web3,debug,eth,txpool,net,engine \
+  --http.api=web3,debug,eth,txpool,net,engine,miner \
   --ws \
   --ws.addr=0.0.0.0 \
   --ws.port=8646 \
   --ws.origins="*" \
-  --ws.api=debug,eth,txpool,net,engine \
+  --ws.api=debug,eth,txpool,net,engine,miner \
   --syncmode=full \
   --gcmode=archive \
   --nodiscover \
