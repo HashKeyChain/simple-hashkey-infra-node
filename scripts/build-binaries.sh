@@ -24,10 +24,10 @@ cd $BASE_PATH/verse/op-batcher && git checkout $HK_VERSE_BRANCH
 just op-batcher
 cp $BASE_PATH/verse/op-batcher/bin/op-batcher $BASE_PATH/bin/op-batcher
 
-# build op-challenger
-cd $BASE_PATH/verse/op-challenger && git checkout $HK_VERSE_BRANCH
-just op-challenger
-cp $BASE_PATH/verse/op-challenger/bin/op-challenger $BASE_PATH/bin/op-challenger
+# build op-challenger, temporarily disabled due to issues with the build.
+#cd $BASE_PATH/verse/op-challenger && git checkout $HK_VERSE_BRANCH
+#just op-challenger
+#cp $BASE_PATH/verse/op-challenger/bin/op-challenger $BASE_PATH/bin/op-challenger
 
 cd $BASE_PATH/op-geth && git checkout hk-geth
 cd $BASE_PATH/verse && git checkout develop
