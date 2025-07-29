@@ -24,7 +24,8 @@ cd $BASE_PATH/verse/op-batcher && git checkout $HK_VERSE_BRANCH
 just op-batcher
 cp $BASE_PATH/verse/op-batcher/bin/op-batcher $BASE_PATH/bin/op-batcher
 
-# build op-challenger, temporarily disabled due to issues with the build.
+# TODO: temporarily disabled due to issues with the build.
+# build op-challenger
 #cd $BASE_PATH/verse/op-challenger && git checkout $HK_VERSE_BRANCH
 #just op-challenger
 #cp $BASE_PATH/verse/op-challenger/bin/op-challenger $BASE_PATH/bin/op-challenger
