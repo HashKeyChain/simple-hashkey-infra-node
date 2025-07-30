@@ -1,11 +1,15 @@
 
+submodules: ## Updates git submodules
+	git submodule update --init --recursive
+.PHONY: submodules
 
-docker: ## Builds Docker images for Go components using buildx
-	# We don't use a buildx builder here, and just load directly into regular docker, for convenience.
-	IMAGE_TAGS=latest \
+docker: submodules ## Builds Docker images for Go components using buildx
+	HK_GETH_BRANCH=${HK_GETH_BRANCH} \
+	HK_VERSE_BRANCH=${HK_VERSE_BRANCH} \
+	IMAGE_TAGS=${HK_GETH_BRANCH} \
 	docker buildx bake \
 			--progress plain \
 			--load \
 			-f docker-bake.hcl \
-			op-node op-batcher op-proposer op-challenger op-deployer op-geth
+			verse-node verse-batcher verse-proposer verse-challenger verse-deployer verse-geth
 .PHONY: docker
