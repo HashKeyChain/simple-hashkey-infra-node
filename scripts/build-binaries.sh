@@ -29,7 +29,7 @@ cd $BASE_PATH/verse/op-challenger && git checkout $HK_VERSE_BRANCH
 just op-challenger
 cp $BASE_PATH/verse/op-challenger/bin/op-challenger $BASE_PATH/bin/op-challenger
 
-cd $BASE_PATH/verse-geth && git checkout develop
+cd $BASE_PATH/verse-geth && git checkout $HK_GETH_BRANCH
 cd $BASE_PATH/verse && git checkout develop
 
 # return base path
