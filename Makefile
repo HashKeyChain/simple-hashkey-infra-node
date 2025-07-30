@@ -4,9 +4,8 @@ submodules: ## Updates git submodules
 .PHONY: submodules
 
 docker: submodules ## Builds Docker images for Go components using buildx
-	HK_GETH_BRANCH=${HK_GETH_BRANCH} \
-	HK_VERSE_BRANCH=${HK_VERSE_BRANCH} \
-	IMAGE_TAGS=${HK_GETH_BRANCH} \
+	HK_GETH_BRANCH=develop \
+	HK_VERSE_BRANCH=develop \
 	docker buildx bake \
 			--progress plain \
 			--load \
