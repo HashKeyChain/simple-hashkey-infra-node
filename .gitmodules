@@ -3,4 +3,4 @@
 	url = https://github.com/HashKeyChain/verse.git
 [submodule "verse-geth"]
 	path = verse-geth
-	url = git@github.com:HashKeyChain/verse-geth.git
+	url = https://github.com/HashKeyChain/verse-geth.git
