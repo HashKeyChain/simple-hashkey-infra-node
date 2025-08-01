@@ -5,7 +5,7 @@ source .envrc
 mkdir -p $BASE_PATH/bin
 
 # build geth
-cd $BASE_PATH/hk-geth && git checkout $HK_GETH_BRANCH
+cd $BASE_PATH/verse-geth && git checkout $HK_GETH_BRANCH
 make geth
 cp build/bin/geth $BASE_PATH/bin/op-geth
 
@@ -29,7 +29,7 @@ cd $BASE_PATH/verse/op-challenger && git checkout $HK_VERSE_BRANCH
 just op-challenger
 cp $BASE_PATH/verse/op-challenger/bin/op-challenger $BASE_PATH/bin/op-challenger
 
-cd $BASE_PATH/op-geth && git checkout hk-geth
+cd $BASE_PATH/verse-geth && git checkout $HK_GETH_BRANCH
 cd $BASE_PATH/verse && git checkout develop
 
 # return base path

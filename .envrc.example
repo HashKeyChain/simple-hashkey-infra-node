@@ -53,7 +53,7 @@ export OP_NODE_RPC_URL=http://localhost:$OP_ROLLUP_PORT
 export OP_BATCHER_RPC_URL=http://localhost:$OP_BATCHER_PORT
 
 # Specified branches for the repositories.
-export HK_GETH_BRANCH=hk-geth
+export HK_GETH_BRANCH=develop
 export HK_VERSE_BRANCH=develop
 
 # Salt used via CREATE2 to determine implementation addresses
