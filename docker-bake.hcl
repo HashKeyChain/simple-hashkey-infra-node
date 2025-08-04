@@ -3,11 +3,11 @@ variable "REPOSITORY" {
 }
 
 variable "KONA_VERSION" {
-  default = "1.0.1"
+  default = "none"
 }
 
 variable "ASTERISC_VERSION" {
-  default = "v1.3.0"
+  default = "none"
 }
 
 variable "GIT_COMMIT" {
@@ -102,9 +102,9 @@ target "verse-node" {
   dockerfile = "ops/docker/op-stack-go/Dockerfile"
   context    = "verse"
   args = {
-    GIT_COMMIT      = "${GIT_COMMIT}"
-    GIT_DATE        = "${GIT_DATE}"
-    OP_NODE_VERSION = "${OP_NODE_VERSION}"
+    GIT_COMMIT      = "${HK_VERSE_COMMIT}"
+    GIT_DATE        = "${HK_VERSE_DATE}"
+    OP_NODE_VERSION = "${HK_VERSE_BRANCH}"
   }
   target = "op-node-target"
   platforms = split(",", PLATFORMS)
@@ -115,9 +115,9 @@ target "verse-batcher" {
   dockerfile = "ops/docker/op-stack-go/Dockerfile"
   context    = "verse"
   args = {
-    GIT_COMMIT         = "${GIT_COMMIT}"
-    GIT_DATE           = "${GIT_DATE}"
-    OP_BATCHER_VERSION = "${OP_BATCHER_VERSION}"
+    GIT_COMMIT         = "${HK_VERSE_COMMIT}"
+    GIT_DATE           = "${HK_VERSE_DATE}"
+    OP_BATCHER_VERSION = "${HK_VERSE_BRANCH}"
   }
   target = "op-batcher-target"
   platforms = split(",", PLATFORMS)
@@ -128,9 +128,9 @@ target "verse-proposer" {
   dockerfile = "ops/docker/op-stack-go/Dockerfile"
   context    = "verse"
   args = {
-    GIT_COMMIT          = "${GIT_COMMIT}"
-    GIT_DATE            = "${GIT_DATE}"
-    OP_PROPOSER_VERSION = "${OP_PROPOSER_VERSION}"
+    GIT_COMMIT          = "${HK_VERSE_COMMIT}"
+    GIT_DATE            = "${HK_VERSE_DATE}"
+    OP_PROPOSER_VERSION = "${HK_VERSE_BRANCH}"
   }
   target = "op-proposer-target"
   platforms = split(",", PLATFORMS)
@@ -141,11 +141,9 @@ target "verse-challenger" {
   dockerfile = "./ops/docker/op-stack-go/Dockerfile"
   context    = "verse"
   args = {
-    GIT_COMMIT            = "${GIT_COMMIT}"
-    GIT_DATE              = "${GIT_DATE}"
-    OP_CHALLENGER_VERSION = "${OP_CHALLENGER_VERSION}"
-    KONA_VERSION          = "${KONA_VERSION}"
-    ASTERISC_VERSION      = "${ASTERISC_VERSION}"
+    GIT_COMMIT            = "${HK_VERSE_COMMIT}"
+    GIT_DATE              = "${HK_VERSE_DATE}"
+    OP_CHALLENGER_VERSION = "${HK_VERSE_BRANCH}"
   }
   target = "op-challenger-target"
   platforms = split(",", PLATFORMS)
@@ -157,9 +155,9 @@ target "cannon" {
   dockerfile = "./ops/docker/op-stack-go/Dockerfile"
   context    = "verse"
   args = {
-    GIT_COMMIT     = "${GIT_COMMIT}"
-    GIT_DATE       = "${GIT_DATE}"
-    CANNON_VERSION = "${CANNON_VERSION}"
+    GIT_COMMIT     = "${HK_VERSE_COMMIT}"
+    GIT_DATE       = "${HK_VERSE_DATE}"
+    CANNON_VERSION = "${HK_VERSE_BRANCH}"
   }
   target = "cannon-target"
   platforms = split(",", PLATFORMS)
@@ -171,9 +169,9 @@ target "verse-deployer" {
   dockerfile = "./ops/docker/op-stack-go/Dockerfile"
   context    = "verse"
   args = {
-    GIT_COMMIT          = "${GIT_COMMIT}"
-    GIT_DATE            = "${GIT_DATE}"
-    OP_DEPLOYER_VERSION = "${OP_DEPLOYER_VERSION}"
+    GIT_COMMIT          = "${HK_VERSE_COMMIT}"
+    GIT_DATE            = "${HK_VERSE_DATE}"
+    OP_DEPLOYER_VERSION = "${HK_VERSE_BRANCH}"
   }
   target = "op-deployer-target"
   platforms = split(",", PLATFORMS)
@@ -185,22 +183,35 @@ target "verse-faucet" {
   dockerfile = "./ops/docker/op-stack-go/Dockerfile"
   context    = "verse"
   args = {
-    GIT_COMMIT        = "${GIT_COMMIT}"
-    GIT_DATE          = "${GIT_DATE}"
-    OP_FAUCET_VERSION = "${OP_FAUCET_VERSION}"
+    GIT_COMMIT        = "${HK_VERSE_COMMIT}"
+    GIT_DATE          = "${HK_VERSE_DATE}"
+    OP_FAUCET_VERSION = "${HK_VERSE_BRANCH}"
   }
   target = "verse-faucet-target"
   platforms = split(",", PLATFORMS)
   tags   = [for tag in split(",", HK_VERSE_BRANCH) : "${REPOSITORY}verse-faucet:${tag}"]
 }
 
+target "verse-cannon" {
+  dockerfile = "ops/docker/op-stack-go/Dockerfile"
+  context    = "verse"
+  args = {
+    GIT_COMMIT     = "${HK_VERSE_COMMIT}"
+    GIT_DATE       = "${HK_VERSE_DATE}"
+    CANNON_VERSION = "${HK_VERSE_BRANCH}"
+  }
+  target = "cannon-target"
+  platforms = split(",", PLATFORMS)
+  tags   = [for tag in split(",", HK_VERSE_BRANCH) : "${REPOSITORY}verse-cannon:${tag}"]
+}
+
 target "verse-geth" {
   dockerfile = "./Dockerfile"
   context    = "verse-geth"
   args = {
-    GIT_COMMIT             = "${GIT_COMMIT}"
-    GIT_DATE               = "${GIT_DATE}"
-    OP_INTEROP_MON_VERSION = "${OP_INTEROP_MON_VERSION}"
+    GIT_COMMIT             = "${HK_GETH_COMMIT}"
+    GIT_DATE               = "${HK_GETH_DATE}"
+    OP_INTEROP_MON_VERSION = "${HK_GETH_BRANCH}"
   }
   target = ""
   platforms = split(",", PLATFORMS)
