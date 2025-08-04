@@ -18,12 +18,12 @@ variable "HK_GETH_BRANCH" {
   default = "latest" // split by ","
 }
 
-variable "HK_GETH_COMMIT" {
-  default = "dev"
+variable "COMMIT" {
+  default = "${HK_GETH_COMMIT}"
 }
 
-variable "HK_GETH_DATE" {
-  default = "0"
+variable "VERSION" {
+  default = "${HK_GETH_BRANCH}"
 }
 
 variable "PLATFORMS" {
@@ -165,6 +165,10 @@ target "verse-cannon" {
 target "verse-geth" {
   dockerfile = "./Dockerfile"
   context    = "verse-geth"
+  args = {
+    COMMIT  = "${COMMIT}"
+    VERSION = "${CANNON}"
+  }
   target = ""
   platforms = split(",", PLATFORMS)
   tags   = [for tag in split(",", HK_GETH_BRANCH) : "${REPOSITORY}verse-geth:${tag}"]
