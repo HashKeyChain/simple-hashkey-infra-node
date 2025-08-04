@@ -2,34 +2,28 @@ variable "REPOSITORY" {
   default = "rothcold/"
 }
 
-variable "KONA_VERSION" {
-  default = "none"
-}
-
-variable "ASTERISC_VERSION" {
-  default = "none"
-}
-
-variable "GIT_COMMIT" {
-  default = "dev"
-}
-
-variable "GIT_DATE" {
-  default = "0"
-}
-
-// The default version to embed in the built images.
-// During CI release builds this is set to <<pipeline.git.tag>>
-variable "GIT_VERSION" {
-  default = "v0.0.0"
-}
-
 variable "HK_VERSE_BRANCH" {
   default = "latest" // split by ","
 }
 
+variable "HK_VERSE_COMMIT" {
+  default = "dev"
+}
+
+variable "HK_VERSE_DATE" {
+  default = "0"
+}
+
 variable "HK_GETH_BRANCH" {
   default = "latest" // split by ","
+}
+
+variable "HK_GETH_COMMIT" {
+  default = "dev"
+}
+
+variable "HK_GETH_DATE" {
+  default = "0"
 }
 
 variable "PLATFORMS" {
@@ -39,64 +33,6 @@ variable "PLATFORMS" {
   // Multi-platform builds can be tested locally with:  --set="*.output=type=image,push=false"
   default = ""
 }
-
-// Each of the services can have a customized version, but defaults to the global specified version.
-variable "OP_NODE_VERSION" {
-  default = "${GIT_VERSION}"
-}
-
-variable "OP_BATCHER_VERSION" {
-  default = "${GIT_VERSION}"
-}
-
-variable "OP_PROPOSER_VERSION" {
-  default = "${GIT_VERSION}"
-}
-
-variable "OP_CHALLENGER_VERSION" {
-  default = "${GIT_VERSION}"
-}
-
-variable "OP_DISPUTE_MON_VERSION" {
-  default = "${GIT_VERSION}"
-}
-
-variable "OP_PROGRAM_VERSION" {
-  default = "${GIT_VERSION}"
-}
-
-variable "OP_SUPERVISOR_VERSION" {
-  default = "${GIT_VERSION}"
-}
-
-variable "OP_TEST_SEQUENCER_VERSION" {
-  default = "${GIT_VERSION}"
-}
-
-variable "CANNON_VERSION" {
-  default = "${GIT_VERSION}"
-}
-
-variable "OP_CONDUCTOR_VERSION" {
-  default = "${GIT_VERSION}"
-}
-
-variable "OP_DEPLOYER_VERSION" {
-  default = "${GIT_VERSION}"
-}
-
-variable "OP_DRIPPER_VERSION" {
-  default = "${GIT_VERSION}"
-}
-
-variable "OP_FAUCET_VERSION" {
-  default = "${GIT_VERSION}"
-}
-
-variable "OP_INTEROP_MON_VERSION" {
-  default = "${GIT_VERSION}"
-}
-
 
 target "verse-node" {
   dockerfile = "ops/docker/op-stack-go/Dockerfile"
