@@ -29,6 +29,11 @@ cd $BASE_PATH/verse/op-challenger && git checkout $HK_VERSE_BRANCH
 just op-challenger
 cp $BASE_PATH/verse/op-challenger/bin/op-challenger $BASE_PATH/bin/op-challenger
 
+# build op-deployer
+cd $BASE_PATH/verse/op-deployer && git checkout $HK_VERSE_BRANCH
+just build
+cp $BASE_PATH/verse/op-deployer/bin/op-deployer $BASE_PATH/bin/op-deployer
+
 cd $BASE_PATH/verse-geth && git checkout $HK_GETH_BRANCH
 cd $BASE_PATH/verse && git checkout develop
 
