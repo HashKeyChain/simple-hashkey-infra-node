@@ -9,7 +9,7 @@ trap "git checkout develop && cd ${BASE_PATH}" EXIT INT KILL ERR
 cd $CONTRACTS_BEDROCK_PATH
 git checkout $HK_VERSE_BRANCH
 forge install && forge build
-forge script scripts/Deploy.s.sol:Deploy --private-key $GS_ADMIN_PRIVATE_KEY --broadcast --rpc-url $L1_RPC_URL --slow
+forge script scripts/deploy/Deploy.s.sol:Deploy --private-key $GS_ADMIN_PRIVATE_KEY --broadcast --rpc-url $L1_RPC_URL --slow
 
 # Create l2chain genesis state and load in file.
 export CONTRACT_ADDRESSES_PATH=$DEPLOYMENT_OUTFILE
