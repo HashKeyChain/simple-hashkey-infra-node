@@ -50,10 +50,10 @@ source .envrc
 bash scripts/run-anvil.sh
 ```
 
-# Create accounts and configs
+# Init the deployment config
 
 ```shell
-bash scripts/create-accounts.sh
+bash scripts/init-config.sh
 ```
 
 # Deploy L1 contracts
