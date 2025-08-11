@@ -2,9 +2,6 @@
 
 source .envrc
 
-# go back if unnormal exit
-trap "git checkout develop && cd ${BASE_PATH}" EXIT INT KILL ERR
-
 cd $OP_NODE_PATH
 git checkout $HK_VERSE_BRANCH
 go run cmd/main.go genesis l2 \
