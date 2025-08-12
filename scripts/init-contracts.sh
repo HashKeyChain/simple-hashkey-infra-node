@@ -10,7 +10,7 @@ sh scripts/getting-started/config.sh
 
 # Build and deploy contracts.
 forge install && forge build
-forge script scripts/deploy/Deploy.s.sol:Deploy --private-key $GS_ADMIN_PRIVATE_KEY --broadcast --rpc-url $L1_RPC_URL --slow
+forge script scripts/deploy/Deploy.s.sol:Deploy --private-key $GS_ADMIN_PRIVATE_KEY --broadcast --rpc-url $L1_RPC_URL --slow --skip-simulation
 
 # Create l2chain genesis state and load in file.
 export CONTRACT_ADDRESSES_PATH=$DEPLOYMENT_OUTFILE
@@ -27,13 +27,13 @@ go run cmd/main.go genesis l2 \
 --outfile.rollup $OP_NODE_ROLLUP_FILE
 
 # start anvil auto mine block
-curl "$L1_RPC_URL" \
+curl 'http://localhost:8545' \
 -H 'Content-Type: application/json' \
--d '{
-    "jsonrpc": "2.0",
-    "method": "evm_setIntervalMining",
-    "params": [12],
-    "id": 67
-}'
+-d "{
+    \"jsonrpc\": \"2.0\",
+    \"method\": \"evm_setIntervalMining\",
+    \"params\": [${L1_BLOCK_TIME}],
+    \"id\": 67
+}"
 
 git checkout develop && cd $BASE_PATH
