@@ -50,22 +50,10 @@ source .envrc
 bash scripts/run-anvil.sh
 ```
 
-# Init the deployment config
+# Deploy L1 contracts and download L1 contracts state.
 
 ```shell
-bash scripts/init-config.sh
-```
-
-# Deploy L1 contracts
-
-```shell
-bash scripts/deploy-contracts.sh
-```
-
-# Create l2chain genesis file and rollup file.
-
-```shell
-bash scripts/init-l2chain.sh
+bash scripts/init-contracts.sh
 ```
 
 # Run op-geth

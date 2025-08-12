@@ -6,3 +6,7 @@ bin/*
 
 # geth database dir
 data
+
+nohup.out
+
+config/getting-started.json
