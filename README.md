@@ -44,22 +44,16 @@ DEPLOYMENT_CONTEXT=getting-started
 source .envrc
 ```
 
-# Deploy L1 contracts and download L1 contracts state.
-
-```shell
-bash scripts/init-contracts.sh
-```
-
 # Run anvil
 
 ```shell
 bash scripts/run-anvil.sh
 ```
 
-# Create l2chain genesis file and rollup file.
+# Deploy L1 contracts and download L1 contracts state.
 
 ```shell
-bash scripts/init-l2chain.sh
+bash scripts/init-contracts.sh
 ```
 
 # Run op-geth
