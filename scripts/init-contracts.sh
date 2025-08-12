@@ -27,7 +27,7 @@ go run cmd/main.go genesis l2 \
 --outfile.rollup $OP_NODE_ROLLUP_FILE
 
 # start anvil auto mine block
-curl 'http://localhost:8545' \
+curl "$L1_RPC_URL" \
 -H 'Content-Type: application/json' \
 -d '{
     "jsonrpc": "2.0",
