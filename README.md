@@ -53,30 +53,30 @@ bash scripts/run-anvil.sh
 # Deploy L1 contracts and download L1 contracts state.
 
 ```shell
-bash scripts/init-contracts.sh
+bash scripts/deploy-contracts.sh
 ```
 
 # Run op-geth
 
 ```shell
 # Init and run l2geth.
-bash scripts/run-l2geth.sh
+bash scripts/run-verse-geth.sh
 ```
 
 # Run op-node
 
 ```shell
-bash scripts/run-op-node.sh
+bash scripts/run-verse-node.sh
 ```
 
 # Run op-proposer
 
 ```shell
-bash scripts/run-op-proposer.sh
+bash scripts/run-verse-proposer.sh
 ```
 
 # Run op-batcher
 
 ```shell
-bash scripts/run-op-batcher.sh
+bash scripts/run-verse-batcher.sh
 ```
