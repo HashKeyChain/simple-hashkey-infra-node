@@ -2,6 +2,8 @@
 
 source .envrc
 
+mkdir -p $DEPLOYMENT_DEPLOY_CONFIG_PATH
+
 # Build and deploy contracts.
 cd $CONTRACTS_BEDROCK_PATH && git checkout $HK_VERSE_BRANCH
 
@@ -17,14 +19,19 @@ export CONTRACT_ADDRESSES_PATH=$DEPLOYMENT_OUTFILE
 forge script scripts/L2Genesis.s.sol:L2Genesis --sig 'runWithStateDump()'
 
 # Init rollup config and genesis file.
-cd $OP_NODE_PATH
-go run cmd/main.go genesis l2 \
+op-node genesis l2 \
 --deploy-config $DEPLOY_CONFIG_PATH \
 --l1-deployments $DEPLOYMENT_OUTFILE \
 --l2-allocs $STATE_DUMP_PATH \
 --l1-rpc $L1_RPC_URL \
 --outfile.l2 $OP_GETH_GENESIS_FILE \
 --outfile.rollup $OP_NODE_ROLLUP_FILE
+
+# Copy the generated configs to the result path.
+cp $DEPLOYMENT_OUTFILE $DEPLOYMENT_DEPLOY_CONFIG_PATH
+cp $STATE_DUMP_PATH $DEPLOYMENT_DEPLOY_CONFIG_PATH
+cp $OP_GETH_GENESIS_FILE $DEPLOYMENT_DEPLOY_CONFIG_PATH
+cp $OP_NODE_ROLLUP_FILE $DEPLOYMENT_DEPLOY_CONFIG_PATH
 
 # start anvil auto mine block
 curl 'http://localhost:8545' \

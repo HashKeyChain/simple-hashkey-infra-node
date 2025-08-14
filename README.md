@@ -13,7 +13,7 @@ curl -L https://foundry.paradigm.xyz | bash
 foundryup --install stable
 ```
 
-* build binaries if necessary
+* build binaries
 
 ```shell
 bash scripts/build-binaries.sh
@@ -50,32 +50,32 @@ source .envrc
 bash scripts/run-anvil.sh
 ```
 
-# Deploy L1 contracts and download L1 contracts state.
+# Deploy contracts
 
 ```shell
 bash scripts/deploy-contracts.sh
 ```
 
-# Run op-geth
+# Run verse-geth
 
 ```shell
 # Init and run l2geth.
 bash scripts/run-verse-geth.sh
 ```
 
-# Run op-node
+# Run verse-node
 
 ```shell
 bash scripts/run-verse-node.sh
 ```
 
-# Run op-proposer
+# Run verse-proposer
 
 ```shell
 bash scripts/run-verse-proposer.sh
 ```
 
-# Run op-batcher
+# Run verse-batcher
 
 ```shell
 bash scripts/run-verse-batcher.sh
