@@ -9,4 +9,8 @@ data
 
 nohup.out
 
-config/getting-started.json
+# ingore config files
+config/getting-started/*.json
+config/sepolia/*.json
+config/mainnet/*.json
+config/testnet/*.json

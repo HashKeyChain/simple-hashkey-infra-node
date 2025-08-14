@@ -86,6 +86,11 @@ export PATH=$PATH:$BASE_PATH/bin
 # contracts-bedrock relate paths
 export CONTRACT_ADDRESSES_PATH=""
 export CHAIN_ID=$L2_CHAIN_ID
+
+# Generated paths for the deployment context.
+export DEPLOYMENT_DEPLOY_CONFIG_PATH=$BASE_PATH/config/$DEPLOYMENT_CONTEXT
+
+# The generated files.
 export DEPLOY_CONFIG_PATH=$CONTRACTS_BEDROCK_PATH/deploy-config/$DEPLOYMENT_CONTEXT.json
 export DEPLOYMENT_OUTFILE=$CONTRACTS_BEDROCK_PATH/deployments/artifact.json
 export STATE_DUMP_PATH=$CONTRACTS_BEDROCK_PATH/deployments/state-dump-latest.json
