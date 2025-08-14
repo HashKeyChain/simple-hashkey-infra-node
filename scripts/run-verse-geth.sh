@@ -2,20 +2,19 @@
 
 source .envrc
 
-rm -rf $BASE_PATH/data
+export VERSE_GETH_PATH=$BASE_PATH/data/verse-geth
+rm -rf $VERSE_GETH_PATH
 
 # Init l2geth datadir.
 echo "Initializing l2geth datadir with genesis file: $OP_GETH_GENESIS_FILE"
-op-geth init --state.scheme=hash --datadir=${BASE_PATH}/data $OP_GETH_GENESIS_FILE
-
-time sleep 2
+op-geth init --state.scheme=hash --datadir=${VERSE_GETH_PATH} $OP_GETH_GENESIS_FILE
 
 # Start l2geth.
 echo "Starting l2geth with datadir: data"
-echo "op-geth --datadir=${BASE_PATH}/data --http --http.port=8645 --http.api=web3,debug,eth,txpool,net,engine --ws --ws.port=8646 --ws.api=debug,eth,txpool,net,engine --syncmode=full --gcmode=archive --nodiscover --maxpeers=0 --networkid=42069 --authrpc.jwtsecret=${BASE_PATH}/data/jwt.txt"
+echo "op-geth --datadir=${VERSE_GETH_PATH} --http --http.port=8645 --http.api=web3,debug,eth,txpool,net,engine --ws --ws.port=8646 --ws.api=debug,eth,txpool,net,engine --syncmode=full --gcmode=archive --nodiscover --maxpeers=0 --networkid=42069 --authrpc.jwtsecret=${VERSE_GETH_PATH}/jwt.txt"
 
 op-geth \
-  --datadir=${BASE_PATH}/data \
+  --datadir=${VERSE_GETH_PATH} \
   --http \
   --http.corsdomain="*" \
   --http.vhosts="*" \
@@ -35,5 +34,5 @@ op-geth \
   --authrpc.vhosts="*" \
   --authrpc.addr=0.0.0.0 \
   --authrpc.port=8651 \
-  --authrpc.jwtsecret=${BASE_PATH}/data/jwt.txt \
+  --authrpc.jwtsecret=${VERSE_GETH_PATH}/jwt.txt \
   --state.scheme=hash
