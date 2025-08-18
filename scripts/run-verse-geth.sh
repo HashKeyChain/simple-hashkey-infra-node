@@ -11,9 +11,10 @@ op-geth init --state.scheme=hash --datadir=${VERSE_GETH_PATH} $OP_GETH_GENESIS_F
 
 # Start l2geth.
 echo "Starting l2geth with datadir: data"
-echo "op-geth --datadir=${VERSE_GETH_PATH} --http --http.port=8645 --http.api=web3,debug,eth,txpool,net,engine --ws --ws.port=8646 --ws.api=debug,eth,txpool,net,engine --syncmode=full --gcmode=archive --nodiscover --maxpeers=0 --networkid=42069 --authrpc.jwtsecret=${VERSE_GETH_PATH}/jwt.txt"
+echo "op-geth --verbosity=4 --datadir=${VERSE_GETH_PATH} --http --http.port=8645 --http.api=web3,debug,eth,txpool,net,engine --ws --ws.port=8646 --ws.api=debug,eth,txpool,net,engine --syncmode=full --gcmode=archive --nodiscover --maxpeers=0 --networkid=42069 --authrpc.jwtsecret=${VERSE_GETH_PATH}/jwt.txt"
 
 op-geth \
+  --verbosity=4 \
   --datadir=${VERSE_GETH_PATH} \
   --http \
   --http.corsdomain="*" \
