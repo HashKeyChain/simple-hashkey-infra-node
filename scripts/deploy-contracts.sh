@@ -8,6 +8,7 @@ mkdir -p $DEPLOYMENT_CONFIG_PATH
 cd $CONTRACTS_BEDROCK_PATH && git checkout $HK_VERSE_BRANCH
 
 # If using a custom gas token, deploy it first.
+# Mint 10000 HSK (custom gas token) to deployer address.
 if [ "${USE_CUSTOM_GAS_TOKEN}" = "true" ]; then
   echo "Deploying custom gas token..."
   deploy_result=$(forge create --broadcast --json --rpc-url $L1_RPC_URL --private-key $DEPLOY_PRIVATE_KEY lib/openzeppelin-contracts/contracts/mocks/ERC20Mock.sol:ERC20Mock --constructor-args "hashkeyToken" "HSK" $DEPLOY_ADDRESS 10000000000000000000000)
