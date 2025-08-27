@@ -2,6 +2,10 @@
 #                 Getting Started                #
 ##################################################
 
+# Deploy account
+export DEPLOY_ADDRESS=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+export DEPLOY_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+
 # Admin account
 export GS_ADMIN_ADDRESS=0x2546BcD3c84621e976D8185a91A922aE77ECEc30
 export GS_ADMIN_PRIVATE_KEY=0xea6c44ac03bff858b476bba40716402b03e41b8e97e276d1baec7c37d42484a0
@@ -96,3 +100,7 @@ export DEPLOYMENT_OUTFILE=$CONTRACTS_BEDROCK_PATH/deployments/artifact.json
 export STATE_DUMP_PATH=$CONTRACTS_BEDROCK_PATH/deployments/state-dump-latest.json
 export OP_GETH_GENESIS_FILE=$CONTRACTS_BEDROCK_PATH/deployments/genesis.json
 export OP_NODE_ROLLUP_FILE=$CONTRACTS_BEDROCK_PATH/deployments/rollup.json
+
+# custom gas token. Fields: useCustomGasToken, customGasTokenAddress
+export USE_CUSTOM_GAS_TOKEN=true
+export CUSTOM_GAS_TOKEN_ADDRESS=0x0000000000000000000000000000000000000000
