@@ -7,6 +7,18 @@ mkdir -p $DEPLOYMENT_CONFIG_PATH
 # Build and deploy contracts.
 cd $CONTRACTS_BEDROCK_PATH && git checkout $HK_VERSE_BRANCH
 
+# If using a custom gas token, deploy it first.
+# Mint 10000 HSK (custom gas token) to deployer address.
+if [ "${USE_CUSTOM_GAS_TOKEN}" = "true" ]; then
+  echo "Deploying custom gas token..."
+  deploy_result=$(forge create --broadcast --json --rpc-url $L1_RPC_URL --private-key $DEPLOY_PRIVATE_KEY lib/openzeppelin-contracts/contracts/mocks/ERC20Mock.sol:ERC20Mock --constructor-args "hashkeyToken" "HSK" $DEPLOY_ADDRESS 10000000000000000000000)
+  CUSTOM_GAS_TOKEN_ADDRESS=$(echo $deploy_result | jq -r .deployedTo)
+  echo "Custom gas token deployed at: $CUSTOM_GAS_TOKEN_ADDRESS"
+
+  # Update .envrc with the new custom gas token address.
+  sed -i '' "s/^export CUSTOM_GAS_TOKEN_ADDRESS=.*/export CUSTOM_GAS_TOKEN_ADDRESS=${CUSTOM_GAS_TOKEN_ADDRESS}/" $BASE_PATH/.envrc
+fi
+
 # Init deployment config.
 sh scripts/getting-started/config.sh
 
@@ -32,6 +44,7 @@ cp $DEPLOYMENT_OUTFILE $DEPLOYMENT_CONFIG_PATH
 cp $STATE_DUMP_PATH $DEPLOYMENT_CONFIG_PATH
 cp $OP_GETH_GENESIS_FILE $DEPLOYMENT_CONFIG_PATH
 cp $OP_NODE_ROLLUP_FILE $DEPLOYMENT_CONFIG_PATH
+cp $DEPLOY_CONFIG_PATH $DEPLOYMENT_CONFIG_PATH
 
 # start anvil auto mine block
 curl 'http://localhost:8545' \
@@ -43,4 +56,4 @@ curl 'http://localhost:8545' \
     \"id\": 67
 }"
 
-git checkout develop && cd $BASE_PATH
+cd $BASE_PATH
