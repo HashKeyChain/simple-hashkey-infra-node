@@ -2,7 +2,7 @@
 
 source .envrc
 
-if [ "$USE_FAULT_PROOFS" = "false" ];then
+if [ "$USE_FAULT_PROOFS" = "false" ]; then
   echo "Use fault proofs is disabled, skip starting verse-challenger."
   exit 0
 fi
