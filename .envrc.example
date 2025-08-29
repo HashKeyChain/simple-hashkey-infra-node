@@ -104,3 +104,6 @@ export OP_NODE_ROLLUP_FILE=$CONTRACTS_BEDROCK_PATH/deployments/rollup.json
 # custom gas token. Fields: useCustomGasToken, customGasTokenAddress
 export USE_CUSTOM_GAS_TOKEN=true
 export CUSTOM_GAS_TOKEN_ADDRESS=0x0000000000000000000000000000000000000000
+
+# Choice to use L2OutputOracle or FaultDisputeGame, false: L2OutputOracle, true: FaultDisputeGame. Field: useFaultProofs
+export USE_FAULT_PROOFS=false
