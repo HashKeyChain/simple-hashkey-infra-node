@@ -11,7 +11,7 @@ else
   proposer_flags="--l2oo-address=$(cat $DEPLOYMENT_OUTFILE | jq -r .L2OutputOracleProxy) --game-type=${GAME_TYPE:-0}"
 fi
 
-misc_flags="--poll-interval=12s --allow-non-finalized --network-timeout=600s --num-confirmations=1"
+misc_flags="--poll-interval=12s --network-timeout=600s --num-confirmations=1"
 flags="$base_flags $proposer_flags $misc_flags"
 
 echo "Starting op-proposer ..."
