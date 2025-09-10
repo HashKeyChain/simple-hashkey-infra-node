@@ -4,7 +4,7 @@ source .envrc
 
 # Check if already initialized.
 superchainConfig=$(cast call --rpc-url $L1_RPC_URL $(jq -r .AnchorStateRegistryProxy $DEPLOYMENT_OUTFILE) "superchainConfig()(address)")
-if [ "$superchainConfig" != "0x0000000000000000000000000000000000000000" ];then
+if [ "$superchainConfig" != "0x0000000000000000000000000000000000000000" ]; then
   exit 0
 fi
 
