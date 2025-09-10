@@ -69,14 +69,20 @@ bash scripts/run-verse-geth.sh
 bash scripts/run-verse-node.sh
 ```
 
+# Run verse-batcher
+
+```shell
+bash scripts/run-verse-batcher.sh
+```
+
 # Run verse-proposer
 
 ```shell
 bash scripts/run-verse-proposer.sh
 ```
 
-# Run verse-batcher
+# Run verse-challenger
 
 ```shell
-bash scripts/run-verse-batcher.sh
+bash scripts/run-verse-challenger.sh
 ```
