@@ -2,6 +2,12 @@
 
 source .envrc
 
+# Check if already initialized.
+superchainConfig=$(cast call --rpc-url $L1_RPC_URL $(jq -r .AnchorStateRegistryProxy $DEPLOYMENT_OUTFILE) "superchainConfig()(address)")
+if [ "$superchainConfig" != "0x0000000000000000000000000000000000000000" ];then
+  exit 0
+fi
+
 # Get L2 output root.
 blockNumber=$(jq -r .faultGameGenesisBlock $DEPLOY_CONFIG_PATH)
 faultGameGenesisBlock=$(printf '0x%x' $blockNumber)
