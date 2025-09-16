@@ -107,3 +107,6 @@ export CUSTOM_GAS_TOKEN_ADDRESS=0x0000000000000000000000000000000000000000
 
 # Choice to use L2OutputOracle or FaultDisputeGame, false: L2OutputOracle, true: FaultDisputeGame. Field: useFaultProofs
 export USE_FAULT_PROOFS=true
+
+# A move can never be made once its clock has exceeded MAX_CLOCK_DURATION seconds of time.
+export MAX_CLOCK_DURATION=300

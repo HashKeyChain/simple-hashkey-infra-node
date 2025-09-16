@@ -3,8 +3,9 @@
 source .envrc
 
 # Check if already initialized.
-superchainConfig=$(cast call --rpc-url $L1_RPC_URL $(jq -r .AnchorStateRegistryProxy $DEPLOYMENT_OUTFILE) "superchainConfig()(address)")
-if [ "$superchainConfig" != "0x0000000000000000000000000000000000000000" ]; then
+result=$(cast call --rpc-url $L1_RPC_URL $(jq -r .AnchorStateRegistryProxy $DEPLOYMENT_OUTFILE) "superchainConfig()(address)" 2>&1 | grep "execution reverted")
+if [ $result -eq 0 ]; then
+  echo "AnchorStateRegistry already initialized, skip initialization."
   exit 0
 fi
 
