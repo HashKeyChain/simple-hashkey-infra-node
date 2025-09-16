@@ -109,4 +109,5 @@ export CUSTOM_GAS_TOKEN_ADDRESS=0x0000000000000000000000000000000000000000
 export USE_FAULT_PROOFS=true
 
 # A move can never be made once its clock has exceeded MAX_CLOCK_DURATION seconds of time.
+# Default value: 1200, minimum value: 300.
 export MAX_CLOCK_DURATION=300
