@@ -28,7 +28,7 @@ export GS_SEQUENCER_PRIVATE_KEY=0xdf57089febbacf7ba0bc227dafbffa9fc08a93fdc68e1e
 ##################################################
 
 # L1 chain information
-export L1_CHAIN_ID=11155111
+export L1_CHAIN_ID=11155112
 export L1_BLOCK_TIME=12
 
 # L2 chain information
@@ -107,3 +107,10 @@ export CUSTOM_GAS_TOKEN_ADDRESS=0x0000000000000000000000000000000000000000
 
 # Choice to use L2OutputOracle or FaultDisputeGame, false: L2OutputOracle, true: FaultDisputeGame. Field: useFaultProofs
 export USE_FAULT_PROOFS=true
+
+# verse-challenger Configuration.
+export OP_CHALLENGER_L1_ETH_RPC=$L1_RPC_URL
+export OP_CHALLENGER_L2_ETH_RPC=$L2_RPC_URL
+export OP_CHALLENGER_DATADIR=${BASE_PATH}/data/verse-challenger
+export OP_CHALLENGER_ROLLUP_RPC=${OP_NODE_RPC_URL}
+export OP_CHALLENGER_GAME_FACTORY_ADDRESS=$(jq -r .DisputeGameFactoryProxy "$DEPLOYMENT_OUTFILE")

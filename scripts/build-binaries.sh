@@ -5,7 +5,7 @@ source .envrc
 mkdir -p $BASE_PATH/bin
 
 # build verse-geth
-cd $BASE_PATH/verse-geth && git checkout $HK_GETH_BRANCH
+cd $BASE_PATH/op-geth && git checkout $HK_GETH_BRANCH
 make geth
 cp build/bin/geth $BASE_PATH/bin/op-geth
 

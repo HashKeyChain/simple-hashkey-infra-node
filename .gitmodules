@@ -1,6 +1,6 @@
 [submodule "verse"]
 	path = verse
-	url = https://github.com/HashKeyChain/verse.git
-[submodule "verse-geth"]
-	path = verse-geth
-	url = https://github.com/HashKeyChain/verse-geth.git
+	url = git@github.com:HashKeyChain/verse.git
+[submodule "op-geth"]
+	path = op-geth
+	url = git@github.com:HashKeyChain/op-geth.git
