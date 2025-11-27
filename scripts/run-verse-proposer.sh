@@ -2,6 +2,11 @@
 
 source .envrc
 
+# Init the anchor state before starting challenger.
+if [ "$USE_FAULT_PROOFS" = "true" ]; then
+  sh scripts/initialize-anchorState.sh
+fi
+
 base_flags="--log.level=debug --rpc.port=8560 --rollup-rpc=$OP_NODE_RPC_URL --private-key=$GS_PROPOSER_PRIVATE_KEY --l1-eth-rpc=$L1_RPC_URL"
 
 export proposer_flags=""

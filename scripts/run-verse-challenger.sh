@@ -2,6 +2,8 @@
 
 source .envrc
 
+mkdir -p $BASE_PATH/data/verse-challenger
+
 if [ "$USE_FAULT_PROOFS" = "false" ]; then
   echo "Use fault proofs is disabled, skip starting verse-challenger."
   exit 0
