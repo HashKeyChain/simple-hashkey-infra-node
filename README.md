@@ -60,29 +60,29 @@ bash scripts/deploy-contracts.sh
 
 ```shell
 # Init and run l2geth.
-bash scripts/run-verse-geth.sh
+bash scripts/run-geth.sh
 ```
 
 # Run verse-node
 
 ```shell
-bash scripts/run-verse-node.sh
+bash scripts/run-node.sh
 ```
 
 # Run verse-batcher
 
 ```shell
-bash scripts/run-verse-batcher.sh
+bash scripts/run-batcher.sh
 ```
 
 # Run verse-proposer
 
 ```shell
-bash scripts/run-verse-proposer.sh
+bash scripts/run-proposer.sh
 ```
 
 # Run verse-challenger
 
 ```shell
-bash scripts/run-verse-challenger.sh
+bash scripts/run-challenger.sh
 ```
