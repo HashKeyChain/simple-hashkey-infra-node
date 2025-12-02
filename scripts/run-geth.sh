@@ -18,4 +18,4 @@ flags="$base_flags $geth_flags"
 echo "Starting verse-geth ..."
 echo "op-geth $flags"
 
-#op-geth $flags
+op-geth $flags
