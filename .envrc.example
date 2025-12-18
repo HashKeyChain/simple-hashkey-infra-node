@@ -58,7 +58,7 @@ export OP_BATCHER_RPC_URL=http://localhost:$OP_BATCHER_PORT
 
 # Specified branches for the repositories.
 export HK_GETH_BRANCH=develop
-export HK_VERSE_BRANCH=develop
+export HK_VERSE_BRANCH=local_dev
 
 # Salt used via CREATE2 to determine implementation addresses
 # NOTE: If you want to deploy contracts from scratch you MUST reload this
