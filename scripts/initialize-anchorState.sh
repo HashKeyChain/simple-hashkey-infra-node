@@ -17,7 +17,7 @@ export FAULT_GAME_GENESIS_OUTPUT_ROOT=$(echo $result | jq -r .result.outputRoot)
 echo "faultGameGenesisOutputRoot: $FAULT_GAME_GENESIS_OUTPUT_ROOT"
 
 # Init deployment config again.
-cd $CONTRACTS_BEDROCK_PATH && git checkout $HK_VERSE_BRANCH
+cd $CONTRACTS_BEDROCK_PATH && git checkout $OP_CONTRACTS_REF
 sh scripts/getting-started/config.sh
 
 export CONTRACT_ADDRESSES_PATH=$DEPLOYMENT_OUTFILE

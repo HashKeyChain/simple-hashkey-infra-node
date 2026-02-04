@@ -1,88 +1,100 @@
-# required relate tools
+# Simple OP Stack Infra Node
 
-* install build tools
+A simplified setup for running a local OP Stack network based on a local L1 (Anvil).
+
+## Required Tools
+
+* Install build tools
 
 ```shell
 brew install just make jq
 ```
 
-* install foundry tool
+* Install foundry tool
 
 ```shell
 curl -L https://foundry.paradigm.xyz | bash
 foundryup --install stable
 ```
 
-* build binaries
+* Build binaries
 
 ```shell
 bash scripts/build-binaries.sh
 ```
 
-# Download submodules
+## Download Submodules
 
 ```shell
 git submodule update --init --recursive
 ```
 
-# Edit .envrc
+## Configuration
 
 ```shell
-# Based on `optimism` root folder.
+# Copy the example config
 cp .envrc.example .envrc
 
-# vim .envrc
-L1_CHAIN_ID=11155111
-L1_BLOCK_TIME=12
-L1_RPC_KIND=alchemy
-L1_RPC_URL=http://localhost:8545
-L2_CHAIN_ID=42069
-L2_BLOCK_TIME=2
-DEPLOYMENT_CONTEXT=getting-started
+# Edit .envrc to configure:
+# - L1_CHAIN_ID, L1_BLOCK_TIME, L1_RPC_KIND, L1_RPC_URL
+# - L2_CHAIN_ID, L2_BLOCK_TIME
+# - OP_GETH_REF: version/branch for op-geth (e.g., v1.101411.1)
+# - OP_MONOREPO_REF: version/branch for optimism monorepo (e.g., v1.9.5)
+# - OP_CONTRACTS_REF: version/branch for contracts (can differ from OP_MONOREPO_REF)
 
-# load environment variables
+# Load environment variables
 source .envrc
 ```
 
-# Run anvil
+## Run Anvil (Local L1)
 
 ```shell
 bash scripts/run-anvil.sh
 ```
 
-# Deploy contracts
+## Deploy Contracts
 
 ```shell
 bash scripts/deploy-contracts.sh
 ```
 
-# Run verse-geth
+## Run op-geth
 
 ```shell
-# Init and run l2geth.
-bash scripts/run-verse-geth.sh
+# Init and run L2 geth
+bash scripts/run-op-geth.sh
 ```
 
-# Run verse-node
+## Run op-node
 
 ```shell
-bash scripts/run-verse-node.sh
+bash scripts/run-op-node.sh
 ```
 
-# Run verse-batcher
+## Run op-batcher
 
 ```shell
-bash scripts/run-verse-batcher.sh
+bash scripts/run-op-batcher.sh
 ```
 
-# Run verse-proposer
+## Run op-proposer
 
 ```shell
-bash scripts/run-verse-proposer.sh
+bash scripts/run-op-proposer.sh
 ```
 
-# Run verse-challenger
+## Run op-challenger
 
 ```shell
-bash scripts/run-verse-challenger.sh
+bash scripts/run-op-challenger.sh
 ```
+
+## Version Configuration
+
+This setup allows you to specify different versions for each component:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `OP_GETH_REF` | op-geth version/branch/commit | `v1.101411.1` |
+| `OP_MONOREPO_REF` | optimism monorepo version | `v1.9.5` |
+| `OP_CONTRACTS_REF` | contracts-bedrock version | `v1.9.5` |

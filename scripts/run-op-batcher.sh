@@ -14,6 +14,6 @@ misc_flags="--rpc.enable-admin --network-timeout=600s --num-confirmations=1 --sa
 
 flags="$base_flags $batcher_flags $txmgr_flags $misc_flags"
 
-echo "op-batcher  ${flags}"
+echo "op-batcher ${flags}"
 
 op-batcher $flags

@@ -24,11 +24,11 @@ variable "GIT_VERSION" {
   default = "v0.0.0"
 }
 
-variable "HK_VERSE_BRANCH" {
+variable "OP_MONOREPO_REF" {
   default = "latest" // split by ","
 }
 
-variable "HK_GETH_BRANCH" {
+variable "OP_GETH_REF" {
   default = "latest" // split by ","
 }
 
@@ -98,9 +98,9 @@ variable "OP_INTEROP_MON_VERSION" {
 }
 
 
-target "verse-node" {
+target "op-node" {
   dockerfile = "ops/docker/op-stack-go/Dockerfile"
-  context    = "verse"
+  context    = "optimism"
   args = {
     GIT_COMMIT      = "${GIT_COMMIT}"
     GIT_DATE        = "${GIT_DATE}"
@@ -108,12 +108,12 @@ target "verse-node" {
   }
   target = "op-node-target"
   platforms = split(",", PLATFORMS)
-  tags   = [for tag in split(",", HK_VERSE_BRANCH) : "${REPOSITORY}verse-node:${tag}"]
+  tags   = [for tag in split(",", OP_MONOREPO_REF) : "${REPOSITORY}op-node:${tag}"]
 }
 
-target "verse-batcher" {
+target "op-batcher" {
   dockerfile = "ops/docker/op-stack-go/Dockerfile"
-  context    = "verse"
+  context    = "optimism"
   args = {
     GIT_COMMIT         = "${GIT_COMMIT}"
     GIT_DATE           = "${GIT_DATE}"
@@ -121,12 +121,12 @@ target "verse-batcher" {
   }
   target = "op-batcher-target"
   platforms = split(",", PLATFORMS)
-  tags   = [for tag in split(",", HK_VERSE_BRANCH) : "${REPOSITORY}verse-batcher:${tag}"]
+  tags   = [for tag in split(",", OP_MONOREPO_REF) : "${REPOSITORY}op-batcher:${tag}"]
 }
 
-target "verse-proposer" {
+target "op-proposer" {
   dockerfile = "ops/docker/op-stack-go/Dockerfile"
-  context    = "verse"
+  context    = "optimism"
   args = {
     GIT_COMMIT          = "${GIT_COMMIT}"
     GIT_DATE            = "${GIT_DATE}"
@@ -134,12 +134,12 @@ target "verse-proposer" {
   }
   target = "op-proposer-target"
   platforms = split(",", PLATFORMS)
-  tags   = [for tag in split(",", HK_VERSE_BRANCH) : "${REPOSITORY}verse-proposer:${tag}"]
+  tags   = [for tag in split(",", OP_MONOREPO_REF) : "${REPOSITORY}op-proposer:${tag}"]
 }
 
-target "verse-challenger" {
+target "op-challenger" {
   dockerfile = "./ops/docker/op-stack-go/Dockerfile"
-  context    = "verse"
+  context    = "optimism"
   args = {
     GIT_COMMIT            = "${GIT_COMMIT}"
     GIT_DATE              = "${GIT_DATE}"
@@ -149,13 +149,13 @@ target "verse-challenger" {
   }
   target = "op-challenger-target"
   platforms = split(",", PLATFORMS)
-  tags   = [for tag in split(",", HK_VERSE_BRANCH) : "${REPOSITORY}verse-challenger:${tag}"]
+  tags   = [for tag in split(",", OP_MONOREPO_REF) : "${REPOSITORY}op-challenger:${tag}"]
 }
 
 
 target "cannon" {
   dockerfile = "./ops/docker/op-stack-go/Dockerfile"
-  context    = "verse"
+  context    = "optimism"
   args = {
     GIT_COMMIT     = "${GIT_COMMIT}"
     GIT_DATE       = "${GIT_DATE}"
@@ -163,13 +163,13 @@ target "cannon" {
   }
   target = "cannon-target"
   platforms = split(",", PLATFORMS)
-  tags   = [for tag in split(",", HK_VERSE_BRANCH) : "${REPOSITORY}cannon:${tag}"]
+  tags   = [for tag in split(",", OP_MONOREPO_REF) : "${REPOSITORY}cannon:${tag}"]
 }
 
 
-target "verse-deployer" {
+target "op-deployer" {
   dockerfile = "./ops/docker/op-stack-go/Dockerfile"
-  context    = "verse"
+  context    = "optimism"
   args = {
     GIT_COMMIT          = "${GIT_COMMIT}"
     GIT_DATE            = "${GIT_DATE}"
@@ -177,26 +177,26 @@ target "verse-deployer" {
   }
   target = "op-deployer-target"
   platforms = split(",", PLATFORMS)
-  tags   = [for tag in split(",", HK_VERSE_BRANCH) : "${REPOSITORY}verse-deployer:${tag}"]
+  tags   = [for tag in split(",", OP_MONOREPO_REF) : "${REPOSITORY}op-deployer:${tag}"]
 }
 
 
-target "verse-faucet" {
+target "op-faucet" {
   dockerfile = "./ops/docker/op-stack-go/Dockerfile"
-  context    = "verse"
+  context    = "optimism"
   args = {
     GIT_COMMIT        = "${GIT_COMMIT}"
     GIT_DATE          = "${GIT_DATE}"
     OP_FAUCET_VERSION = "${OP_FAUCET_VERSION}"
   }
-  target = "verse-faucet-target"
+  target = "op-faucet-target"
   platforms = split(",", PLATFORMS)
-  tags   = [for tag in split(",", HK_VERSE_BRANCH) : "${REPOSITORY}verse-faucet:${tag}"]
+  tags   = [for tag in split(",", OP_MONOREPO_REF) : "${REPOSITORY}op-faucet:${tag}"]
 }
 
-target "verse-geth" {
+target "op-geth" {
   dockerfile = "./Dockerfile"
-  context    = "verse-geth"
+  context    = "op-geth"
   args = {
     GIT_COMMIT             = "${GIT_COMMIT}"
     GIT_DATE               = "${GIT_DATE}"
@@ -204,5 +204,5 @@ target "verse-geth" {
   }
   target = ""
   platforms = split(",", PLATFORMS)
-  tags   = [for tag in split(",", HK_GETH_BRANCH) : "${REPOSITORY}verse-geth:${tag}"]
+  tags   = [for tag in split(",", OP_GETH_REF) : "${REPOSITORY}op-geth:${tag}"]
 }

@@ -6,10 +6,10 @@ submodules:
 
 # Builds Docker images for Go components using buildx
 docker: submodules
-    HK_GETH_BRANCH=latest \
-    HK_VERSE_BRANCH=latest \
+    OP_GETH_REF=latest \
+    OP_MONOREPO_REF=latest \
     docker buildx bake \
     		--progress plain \
     		--load \
     		-f docker-bake.hcl \
-    		verse-node verse-batcher verse-proposer verse-challenger verse-deployer verse-geth
+    		op-node op-batcher op-proposer op-challenger op-deployer op-geth

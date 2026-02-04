@@ -5,7 +5,7 @@ source .envrc
 mkdir -p $DEPLOYMENT_CONFIG_PATH
 
 # Build and deploy contracts.
-cd $CONTRACTS_BEDROCK_PATH && git checkout $HK_VERSE_BRANCH
+cd $CONTRACTS_BEDROCK_PATH && git checkout $OP_CONTRACTS_REF
 
 # If using a custom gas token, deploy it first.
 # Mint 10000 HSK (custom gas token) to deployer address.

@@ -1,6 +1,6 @@
-[submodule "verse"]
-	path = verse
-	url = https://github.com/HashKeyChain/verse.git
-[submodule "verse-geth"]
-	path = verse-geth
-	url = https://github.com/HashKeyChain/verse-geth.git
+[submodule "optimism"]
+	path = optimism
+	url = https://github.com/ethereum-optimism/optimism.git
+[submodule "op-geth"]
+	path = op-geth
+	url = https://github.com/ethereum-optimism/op-geth.git
