@@ -35,14 +35,7 @@ git submodule update --init --recursive
 # Copy the example config
 cp .envrc.example .envrc
 
-# Edit .envrc to configure:
-# - L1_CHAIN_ID, L1_BLOCK_TIME, L1_RPC_KIND, L1_RPC_URL
-# - L2_CHAIN_ID, L2_BLOCK_TIME
-# - OP_GETH_REF: version/branch for op-geth (e.g., v1.101411.1)
-# - OP_MONOREPO_REF: version/branch for optimism monorepo (e.g., v1.9.5)
-# - OP_CONTRACTS_REF: version/branch for contracts (can differ from OP_MONOREPO_REF)
-
-# Load environment variables
+# Edit .envrc to configure versions for each component
 source .envrc
 ```
 
@@ -91,10 +84,16 @@ bash scripts/run-op-challenger.sh
 
 ## Version Configuration
 
-This setup allows you to specify different versions for each component:
+Each component can be configured with its own version/branch/commit:
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `OP_GETH_REF` | op-geth version/branch/commit | `v1.101411.1` |
-| `OP_MONOREPO_REF` | optimism monorepo version | `v1.9.5` |
+| `OP_GETH_REF` | op-geth version | `v1.101411.1` |
+| `OP_NODE_REF` | op-node version | `v1.9.5` |
+| `OP_BATCHER_REF` | op-batcher version | `v1.9.5` |
+| `OP_PROPOSER_REF` | op-proposer version | `v1.9.5` |
+| `OP_CHALLENGER_REF` | op-challenger version | `v1.9.5` |
+| `OP_PROGRAM_REF` | op-program version | `v1.9.5` |
+| `CANNON_REF` | cannon version | `v1.9.5` |
+| `OP_DEPLOYER_REF` | op-deployer version | `v1.9.5` |
 | `OP_CONTRACTS_REF` | contracts-bedrock version | `v1.9.5` |

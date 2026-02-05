@@ -21,7 +21,7 @@ cd $CONTRACTS_BEDROCK_PATH && git checkout $OP_CONTRACTS_REF
 sh scripts/getting-started/config.sh
 
 export CONTRACT_ADDRESSES_PATH=$DEPLOYMENT_OUTFILE
-forge script scripts/deploy/Deploy.s.sol:Deploy --private-key $GS_ADMIN_PRIVATE_KEY --broadcast --rpc-url $L1_RPC_URL --sig "initializeAnchorStateRegistry()" --slow --skip-simulation
+forge script scripts/Deploy.s.sol:Deploy --private-key $GS_ADMIN_PRIVATE_KEY --broadcast --rpc-url $L1_RPC_URL --sig "initializeAnchorStateRegistry()" --skip-simulation
 
 cp $DEPLOY_CONFIG_PATH $DEPLOYMENT_CONFIG_PATH
 

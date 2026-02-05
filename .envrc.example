@@ -56,13 +56,38 @@ export OP_BATCHER_PORT=9645
 export OP_NODE_RPC_URL=http://localhost:$OP_ROLLUP_PORT
 export OP_BATCHER_RPC_URL=http://localhost:$OP_BATCHER_PORT
 
-# Specified refs/branches for the repositories.
-# OP_GETH_REF: branch/tag/commit for op-geth repository
-# OP_MONOREPO_REF: branch/tag/commit for optimism monorepo (op-node, op-batcher, op-proposer, etc.)
-# OP_CONTRACTS_REF: branch/tag/commit for contracts-bedrock (can be same as OP_MONOREPO_REF or different)
-export OP_GETH_REF=v1.101411.1
-export OP_MONOREPO_REF=v1.9.5
-export OP_CONTRACTS_REF=v1.9.5
+##################################################
+#           Component Version References         #
+##################################################
+
+# op-geth version (from ethereum-optimism/op-geth releases)
+export OP_GETH_REF=v1.101605.0
+
+# op-node version (from ethereum-optimism/optimism releases, e.g., op-node/v1.9.5)
+export OP_NODE_REF=feature/upgrade_cgt
+
+# op-batcher version
+export OP_BATCHER_REF=op-batcher/v1.16.3
+
+# op-proposer version
+export OP_PROPOSER_REF=op-proposer/v1.10.0
+
+# op-challenger version
+export OP_CHALLENGER_REF=v1.9.5
+
+# op-program version (for fault proofs)
+export OP_PROGRAM_REF=v1.9.5
+
+# cannon version (for fault proofs)
+export CANNON_REF=v1.9.5
+
+# op-deployer version
+export OP_DEPLOYER_REF=v1.9.5
+
+# contracts-bedrock version
+export OP_CONTRACTS_REF=op-contracts/v2.0.0-beta.2
+
+##################################################
 
 # Salt used via CREATE2 to determine implementation addresses
 # NOTE: If you want to deploy contracts from scratch you MUST reload this
@@ -110,4 +135,4 @@ export USE_CUSTOM_GAS_TOKEN=false
 export CUSTOM_GAS_TOKEN_ADDRESS=0x0000000000000000000000000000000000000000
 
 # Choice to use L2OutputOracle or FaultDisputeGame, false: L2OutputOracle, true: FaultDisputeGame. Field: useFaultProofs
-export USE_FAULT_PROOFS=true
+export USE_FAULT_PROOFS=false

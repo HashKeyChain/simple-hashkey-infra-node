@@ -24,12 +24,37 @@ variable "GIT_VERSION" {
   default = "v0.0.0"
 }
 
-variable "OP_MONOREPO_REF" {
-  default = "latest" // split by ","
+// Component version refs (for git checkout and docker tags)
+variable "OP_GETH_REF" {
+  default = "latest"
 }
 
-variable "OP_GETH_REF" {
-  default = "latest" // split by ","
+variable "OP_NODE_REF" {
+  default = "latest"
+}
+
+variable "OP_BATCHER_REF" {
+  default = "latest"
+}
+
+variable "OP_PROPOSER_REF" {
+  default = "latest"
+}
+
+variable "OP_CHALLENGER_REF" {
+  default = "latest"
+}
+
+variable "OP_DEPLOYER_REF" {
+  default = "latest"
+}
+
+variable "OP_FAUCET_REF" {
+  default = "latest"
+}
+
+variable "CANNON_REF" {
+  default = "latest"
 }
 
 variable "PLATFORMS" {
@@ -40,7 +65,7 @@ variable "PLATFORMS" {
   default = ""
 }
 
-// Each of the services can have a customized version, but defaults to the global specified version.
+// Build version args (embedded in binaries)
 variable "OP_NODE_VERSION" {
   default = "${GIT_VERSION}"
 }
@@ -108,7 +133,7 @@ target "op-node" {
   }
   target = "op-node-target"
   platforms = split(",", PLATFORMS)
-  tags   = [for tag in split(",", OP_MONOREPO_REF) : "${REPOSITORY}op-node:${tag}"]
+  tags   = [for tag in split(",", OP_NODE_REF) : "${REPOSITORY}op-node:${tag}"]
 }
 
 target "op-batcher" {
@@ -121,7 +146,7 @@ target "op-batcher" {
   }
   target = "op-batcher-target"
   platforms = split(",", PLATFORMS)
-  tags   = [for tag in split(",", OP_MONOREPO_REF) : "${REPOSITORY}op-batcher:${tag}"]
+  tags   = [for tag in split(",", OP_BATCHER_REF) : "${REPOSITORY}op-batcher:${tag}"]
 }
 
 target "op-proposer" {
@@ -134,7 +159,7 @@ target "op-proposer" {
   }
   target = "op-proposer-target"
   platforms = split(",", PLATFORMS)
-  tags   = [for tag in split(",", OP_MONOREPO_REF) : "${REPOSITORY}op-proposer:${tag}"]
+  tags   = [for tag in split(",", OP_PROPOSER_REF) : "${REPOSITORY}op-proposer:${tag}"]
 }
 
 target "op-challenger" {
@@ -149,7 +174,7 @@ target "op-challenger" {
   }
   target = "op-challenger-target"
   platforms = split(",", PLATFORMS)
-  tags   = [for tag in split(",", OP_MONOREPO_REF) : "${REPOSITORY}op-challenger:${tag}"]
+  tags   = [for tag in split(",", OP_CHALLENGER_REF) : "${REPOSITORY}op-challenger:${tag}"]
 }
 
 
@@ -163,7 +188,7 @@ target "cannon" {
   }
   target = "cannon-target"
   platforms = split(",", PLATFORMS)
-  tags   = [for tag in split(",", OP_MONOREPO_REF) : "${REPOSITORY}cannon:${tag}"]
+  tags   = [for tag in split(",", CANNON_REF) : "${REPOSITORY}cannon:${tag}"]
 }
 
 
@@ -177,7 +202,7 @@ target "op-deployer" {
   }
   target = "op-deployer-target"
   platforms = split(",", PLATFORMS)
-  tags   = [for tag in split(",", OP_MONOREPO_REF) : "${REPOSITORY}op-deployer:${tag}"]
+  tags   = [for tag in split(",", OP_DEPLOYER_REF) : "${REPOSITORY}op-deployer:${tag}"]
 }
 
 
@@ -191,7 +216,7 @@ target "op-faucet" {
   }
   target = "op-faucet-target"
   platforms = split(",", PLATFORMS)
-  tags   = [for tag in split(",", OP_MONOREPO_REF) : "${REPOSITORY}op-faucet:${tag}"]
+  tags   = [for tag in split(",", OP_FAUCET_REF) : "${REPOSITORY}op-faucet:${tag}"]
 }
 
 target "op-geth" {
