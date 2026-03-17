@@ -1,11 +1,24 @@
 #!/bin/bash
 
+# 若由 chain-setup 调用且已设置，不要被 .envrc 覆盖（如 local 用 localhost L1、config/local）
+_CALLER_L1_RPC="${L1_RPC_URL:-}"
+_CALLER_DEPLOYMENT_CONTEXT="${DEPLOYMENT_CONTEXT:-}"
 source .envrc
+[ -n "$_CALLER_L1_RPC" ] && export L1_RPC_URL="$_CALLER_L1_RPC"
+if [ -n "$_CALLER_DEPLOYMENT_CONTEXT" ]; then
+  export DEPLOYMENT_CONTEXT="$_CALLER_DEPLOYMENT_CONTEXT"
+  export DEPLOYMENT_CONFIG_PATH="$BASE_PATH/config/$DEPLOYMENT_CONTEXT"
+  export DEPLOY_CONFIG_PATH="$CONTRACTS_BEDROCK_PATH/deploy-config/$DEPLOYMENT_CONTEXT.json"
+fi
 
 mkdir -p $DEPLOYMENT_CONFIG_PATH
 
 # Build and deploy contracts.
-cd $CONTRACTS_BEDROCK_PATH && git checkout $OP_CONTRACTS_REF
+cd $CONTRACTS_BEDROCK_PATH
+# Remove lib dirs that often cause "unable to rmdir ... Directory not empty" on checkout;
+# forge install below will reinstall the correct versions for this ref.
+rm -rf lib/openzeppelin-contracts-v5 lib/solady-v0.0.245 lib/superchain-registry 2>/dev/null || true
+git checkout $OP_CONTRACTS_REF
 
 # If using a custom gas token and address is not set, deploy it first.
 # Mint 10000 HSK (custom gas token) to deployer address.
@@ -44,7 +57,11 @@ echo "  - Custom gas token address: $CUSTOM_GAS_TOKEN_ADDRESS"
 echo "  - Fault proofs: $USE_FAULT_PROOFS"
 
 # Build and deploy contracts.
-forge install && forge build --silent
+# forge install 内部用 git clone/submodule，git 经常长时间无输出，属正常现象
+echo "Installing Forge dependencies (may take 2-5 min, git may have little output)..."
+forge install
+echo "Dependencies OK. Building..."
+forge build --silent
 # --slow removed for faster batch deployment
 forge script scripts/Deploy.s.sol:Deploy --private-key $GS_ADMIN_PRIVATE_KEY --broadcast --rpc-url $L1_RPC_URL --batch-size 10
 
