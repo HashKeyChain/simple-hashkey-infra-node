@@ -2,6 +2,8 @@
 #
 # 一键生成 rollup.json 和 genesis.json（部署 L1 合约并生成 L2 配置）。
 # 不启动 L2 节点，仅完成配置生成。
+# 首次部署为 L2OutputOracle 链（USE_FAULT_PROOFS=false），合约版本见 .envrc 中 OP_CONTRACTS_REF（如 op-contracts/v2.0.0-beta.2）。
+# 升级到 PermissionedDisputeGame 见：scripts/upgrade-to-fault-proofs.sh
 #
 # 用法:
 #   bash scripts/chain-setup.sh [local|server]
@@ -58,34 +60,36 @@ echo "DEPLOYMENT_CONFIG_PATH=$DEPLOYMENT_CONFIG_PATH"
 echo ""
 
 # 等待 L1 RPC 就绪
+_l1_ok() {
+  curl -sf -X POST -H "Content-Type: application/json" \
+    --connect-timeout 1 --max-time 2 \
+    --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+    "$L1_RPC_URL" >/dev/null 2>&1
+}
 wait_l1() {
-  local max=30
-  local n=0
-  while ! cast block latest --rpc-url "$L1_RPC_URL" &>/dev/null; do
-    n=$((n + 1))
-    if [ $n -ge $max ]; then
-      echo "Error: L1 RPC not ready at $L1_RPC_URL after ${max}s"
-      exit 1
-    fi
-    echo "  Waiting for L1... ($n/$max)"
-    sleep 1
+  for i in $(seq 1 10); do
+    _l1_ok && { echo "  L1 RPC ready."; return 0; }
+    sleep 0.5
   done
-  echo "  L1 RPC ready."
+  echo "Error: L1 RPC not ready at $L1_RPC_URL after 5s"
+  exit 1
 }
 
 ANVIL_PID=""
 
 if [ "$CHAIN_ENV" = "local" ]; then
-  if ! cast block latest --rpc-url "$L1_RPC_URL" &>/dev/null; then
-    echo "L1 not running. Starting anvil in background..."
-    docker run --rm -d -p 8545:8545 --name anvil-chain \
-      --entrypoint anvil ghcr.io/foundry-rs/foundry:v1.3.2 \
-      --chain-id=$L1_CHAIN_ID --accounts=20 --host=0.0.0.0 \
-      --slots-in-an-epoch=1 --block-time 1
-    ANVIL_PID="docker"
-    wait_l1
-  else
+  if curl -sf -X POST -H "Content-Type: application/json" --connect-timeout 1 --max-time 2 \
+    --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' "$L1_RPC_URL" >/dev/null 2>&1; then
     echo "L1 already running at $L1_RPC_URL"
+  else
+    echo "L1 not running. Starting anvil (native)..."
+    ANVIL_LOG="${DATA_DIR:-$BASE_PATH/data}/logs/anvil.log"
+    mkdir -p "$(dirname "$ANVIL_LOG")"
+    nohup anvil --chain-id=$L1_CHAIN_ID --accounts=20 --host=0.0.0.0 --port=8545 \
+      --slots-in-an-epoch=1 --block-time 1 >> "$ANVIL_LOG" 2>&1 &
+    ANVIL_PID=$!
+    echo $ANVIL_PID > "${DATA_DIR:-$BASE_PATH/data}/pids/anvil.pid"
+    wait_l1
   fi
 else
   # server: 直接检查 L1 可用

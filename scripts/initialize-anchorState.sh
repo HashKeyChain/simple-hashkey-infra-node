@@ -1,6 +1,11 @@
 #!/bin/bash
 
+# 若由 upgrade-to-fault-proofs 等脚本调用且已设置，不要被 .envrc 覆盖
+_CALLER_DEPLOYMENT_OUTFILE="${DEPLOYMENT_OUTFILE:-}"
+_CALLER_DEPLOY_CONFIG_PATH="${DEPLOY_CONFIG_PATH:-}"
 source .envrc
+[ -n "$_CALLER_DEPLOYMENT_OUTFILE" ] && export DEPLOYMENT_OUTFILE="$_CALLER_DEPLOYMENT_OUTFILE"
+[ -n "$_CALLER_DEPLOY_CONFIG_PATH" ] && export DEPLOY_CONFIG_PATH="$_CALLER_DEPLOY_CONFIG_PATH"
 
 # Check if already initialized.
 superchainConfig=$(cast call --rpc-url $L1_RPC_URL $(jq -r .AnchorStateRegistryProxy $DEPLOYMENT_OUTFILE) "superchainConfig()(address)")

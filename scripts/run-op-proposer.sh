@@ -13,7 +13,9 @@ export proposer_flags=""
 if [ "$USE_FAULT_PROOFS" = "true" ]; then
   proposer_flags="--game-factory-address=$(cat $DEPLOYMENT_OUTFILE | jq -r .DisputeGameFactoryProxy) --proposal-interval=${PROPOSAL_INTERVAL:-30s} --game-type=${GAME_TYPE:-0}"
 else
-  proposer_flags="--l2oo-address=$(cat $DEPLOYMENT_OUTFILE | jq -r .L2OutputOracleProxy)"
+  # 部分 op-proposer 二进制不支持 --l2oo-address，用环境变量
+  export OP_PROPOSER_L2OO_ADDRESS=$(cat $DEPLOYMENT_OUTFILE | jq -r .L2OutputOracleProxy)
+  proposer_flags=""
 fi
 
 misc_flags="--poll-interval=30s --network-timeout=600s --num-confirmations=1 --wait-node-sync=${WAIT_NODE_SYNC:-true}"

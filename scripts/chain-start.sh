@@ -50,6 +50,8 @@ fi
 # local 时：用本机 anvil，且从 config/local 读配置（与 chain-setup local 一致）
 if [ "$CHAIN_ENV" = "local" ]; then
   export L1_RPC_URL="http://localhost:8545"
+  export L2_RPC_URL="http://localhost:8645"
+  export OP_NODE_RPC_URL="http://localhost:9545"
   export DEPLOYMENT_CONFIG_PATH="$BASE_PATH/config/local"
   export OP_GETH_GENESIS_FILE="$DEPLOYMENT_CONFIG_PATH/genesis.json"
   export OP_NODE_ROLLUP_FILE="$DEPLOYMENT_CONFIG_PATH/rollup.json"
@@ -70,22 +72,109 @@ echo "L1_RPC_URL=$L1_RPC_URL"
 echo ""
 
 # ---------- L1 (仅 local) ----------
+_anvil_ok() {
+  curl -sf -X POST -H "Content-Type: application/json" \
+    --connect-timeout 1 --max-time 2 \
+    --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+    "$L1_RPC_URL" >/dev/null 2>&1
+}
+
 if [ "$CHAIN_ENV" = "local" ]; then
-  if ! cast block latest --rpc-url "$L1_RPC_URL" &>/dev/null; then
-    echo "Starting anvil..."
-    docker run --rm -d -p 8545:8545 --name anvil-chain \
-      --entrypoint anvil ghcr.io/foundry-rs/foundry:v1.3.2 \
-      --chain-id=$L1_CHAIN_ID --accounts=20 --host=0.0.0.0 \
-      --slots-in-an-epoch=1 --block-time 1
-    echo "Waiting for anvil..."
-    for i in $(seq 1 15); do
-      cast block latest --rpc-url "$L1_RPC_URL" &>/dev/null && break
-      sleep 1
-    done
-    echo "Anvil started."
-  else
+  if _anvil_ok; then
     echo "L1 already running at $L1_RPC_URL"
+  else
+    echo "Starting anvil (native)..."
+    ANVIL_LOG="$LOG_DIR/anvil.log"
+    nohup anvil --chain-id=$L1_CHAIN_ID --accounts=20 --host=0.0.0.0 --port=8545 \
+      --slots-in-an-epoch=1 --block-time 1 >> "$ANVIL_LOG" 2>&1 &
+    echo $! > "$PID_DIR/anvil.pid"
+    for i in $(seq 1 10); do
+      _anvil_ok && break
+      sleep 0.5
+    done
+    if _anvil_ok; then
+      echo "Anvil ready."
+    else
+      echo "Error: anvil not reachable at $L1_RPC_URL after 5s"
+      echo "  Check: $ANVIL_LOG"
+      exit 1
+    fi
   fi
+
+  # 验证 L1 上 SystemConfig 合约是否存在（anvil 重建后合约会丢失）
+  L1_SYSTEM_CONFIG=$(jq -r '.l1_system_config_address // empty' "$OP_NODE_ROLLUP_FILE" 2>/dev/null)
+  if [ -n "$L1_SYSTEM_CONFIG" ]; then
+    SC_CODE=$(curl -sf -X POST -H "Content-Type: application/json" \
+      --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getCode\",\"params\":[\"$L1_SYSTEM_CONFIG\",\"latest\"],\"id\":1}" \
+      "$L1_RPC_URL" 2>/dev/null | jq -r '.result // "0x"')
+    if [ "$SC_CODE" = "0x" ] || [ -z "$SC_CODE" ]; then
+      echo ""
+      echo "Error: L1 SystemConfig contract ($L1_SYSTEM_CONFIG) has no code."
+      echo "  anvil was likely recreated (container data lost). L1 contracts no longer exist."
+      echo "  Must re-deploy: bash scripts/chain-up.sh local"
+      echo "  (chain-up will run chain-setup + chain-start automatically)"
+      exit 1
+    fi
+  fi
+fi
+
+# ---------- 停掉可能残留的旧进程 ----------
+for name in op-geth op-node op-batcher op-proposer; do
+  pid_file="$PID_DIR/${name}.pid"
+  if [ -f "$pid_file" ]; then
+    old_pid=$(cat "$pid_file")
+    if kill -0 "$old_pid" 2>/dev/null; then
+      echo "Killing old $name (pid $old_pid)..."
+      kill "$old_pid" 2>/dev/null || true
+    fi
+    rm -f "$pid_file"
+  fi
+done
+# 也按端口杀残留进程（PID 文件可能过期）
+for port in 8645 8651 30303 9545 8548 8560; do
+  for pid in $(lsof -i :$port -t 2>/dev/null); do
+    echo "Killing process on port $port (pid $pid)..."
+    kill "$pid" 2>/dev/null || true
+  done
+done
+sleep 1
+
+# ---------- 清理 rollup.json 中当前 op-node 不支持的字段 ----------
+if jq -e '.da_challenge_contract_address' "$OP_NODE_ROLLUP_FILE" >/dev/null 2>&1; then
+  echo "Removing unsupported field 'da_challenge_contract_address' from rollup.json..."
+  jq 'del(.da_challenge_contract_address)' "$OP_NODE_ROLLUP_FILE" > "${OP_NODE_ROLLUP_FILE}.tmp" \
+    && mv "${OP_NODE_ROLLUP_FILE}.tmp" "$OP_NODE_ROLLUP_FILE"
+fi
+
+# ---------- 校验 rollup.json 的 L1 genesis hash 是否和实际 L1 一致 ----------
+_ROLLUP_L1_NUM=$(jq -r '.genesis.l1.number' "$OP_NODE_ROLLUP_FILE" 2>/dev/null)
+_ROLLUP_L1_HASH=$(jq -r '.genesis.l1.hash' "$OP_NODE_ROLLUP_FILE" 2>/dev/null)
+if [ -n "$_ROLLUP_L1_NUM" ] && [ "$_ROLLUP_L1_NUM" != "null" ]; then
+  _ROLLUP_L1_HEX=$(printf '0x%x' "$_ROLLUP_L1_NUM" 2>/dev/null)
+  _ACTUAL_L1_HASH=$(curl -sf -X POST -H "Content-Type: application/json" \
+    --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getBlockByNumber\",\"params\":[\"$_ROLLUP_L1_HEX\",false],\"id\":1}" \
+    "$L1_RPC_URL" 2>/dev/null | jq -r '.result.hash // empty')
+  if [ -n "$_ACTUAL_L1_HASH" ] && [ "$_ACTUAL_L1_HASH" != "$_ROLLUP_L1_HASH" ]; then
+    echo "WARNING: rollup.json L1 genesis hash mismatch!"
+    echo "  rollup.json: $_ROLLUP_L1_HASH"
+    echo "  actual L1:   $_ACTUAL_L1_HASH"
+    echo "  Updating rollup.json to match current L1..."
+    jq --arg h "$_ACTUAL_L1_HASH" '.genesis.l1.hash = $h' "$OP_NODE_ROLLUP_FILE" > "${OP_NODE_ROLLUP_FILE}.tmp" \
+      && mv "${OP_NODE_ROLLUP_FILE}.tmp" "$OP_NODE_ROLLUP_FILE"
+  fi
+fi
+
+# ---------- 注入 chain_op_config（op-node v1.11+ 必须）----------
+if ! jq -e '.chain_op_config' "$OP_NODE_ROLLUP_FILE" >/dev/null 2>&1; then
+  echo "Injecting chain_op_config into rollup.json (required by op-node v1.11+)..."
+  jq '. + {
+    "chain_op_config": {
+      "eip1559Elasticity": 6,
+      "eip1559Denominator": 50,
+      "eip1559DenominatorCanyon": 250
+    }
+  }' "$OP_NODE_ROLLUP_FILE" > "${OP_NODE_ROLLUP_FILE}.tmp" \
+    && mv "${OP_NODE_ROLLUP_FILE}.tmp" "$OP_NODE_ROLLUP_FILE"
 fi
 
 # ---------- JWT（op-geth / op-node 共用）----------
@@ -97,7 +186,11 @@ if [ ! -f "$JWT_FILE" ]; then
   echo "Generated JWT at $JWT_FILE"
 fi
 
-# ---------- op-geth init（仅首次）----------
+# ---------- op-geth init ----------
+if [ "${CLEAN_OP_GETH_DATADIR:-0}" = "1" ] && [ -d "$OP_GETH_DATA_PATH/geth" ]; then
+  echo "CLEAN_OP_GETH_DATADIR=1, removing old op-geth datadir..."
+  rm -rf "$OP_GETH_DATA_PATH/geth" "$OP_GETH_DATA_PATH/history"
+fi
 if [ ! -d "$OP_GETH_DATA_PATH/geth" ]; then
   echo "Initializing op-geth datadir..."
   op-geth init --state.scheme=hash --datadir="$OP_GETH_DATA_PATH" "$OP_GETH_GENESIS_FILE"

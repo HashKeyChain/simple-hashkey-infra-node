@@ -22,4 +22,5 @@ for name in op-proposer op-batcher op-node op-geth; do
   fi
 done
 
-echo "Done. To stop anvil (if started by chain-setup or chain-start): docker stop anvil-chain"
+echo "Done. Anvil 未停止（保留可让下次 chain-start 更快）."
+echo "  若要停 anvil: kill \$(cat $PID_DIR/anvil.pid 2>/dev/null) 2>/dev/null"
