@@ -86,7 +86,7 @@ if [ "$CHAIN_ENV" = "local" ]; then
     ANVIL_LOG="${DATA_DIR:-$BASE_PATH/data}/logs/anvil.log"
     mkdir -p "$(dirname "$ANVIL_LOG")"
     nohup anvil --chain-id=$L1_CHAIN_ID --accounts=20 --host=0.0.0.0 --port=8545 \
-      --slots-in-an-epoch=1 --block-time 1 >> "$ANVIL_LOG" 2>&1 &
+      --slots-in-an-epoch=1 --block-time ${L1_BLOCK_TIME:-12} >> "$ANVIL_LOG" 2>&1 &
     ANVIL_PID=$!
     echo $ANVIL_PID > "${DATA_DIR:-$BASE_PATH/data}/pids/anvil.pid"
     wait_l1

@@ -86,7 +86,7 @@ if [ "$CHAIN_ENV" = "local" ]; then
     echo "Starting anvil (native)..."
     ANVIL_LOG="$LOG_DIR/anvil.log"
     nohup anvil --chain-id=$L1_CHAIN_ID --accounts=20 --host=0.0.0.0 --port=8545 \
-      --slots-in-an-epoch=1 --block-time 1 >> "$ANVIL_LOG" 2>&1 &
+      --slots-in-an-epoch=1 --block-time ${L1_BLOCK_TIME:-12} >> "$ANVIL_LOG" 2>&1 &
     echo $! > "$PID_DIR/anvil.pid"
     for i in $(seq 1 10); do
       _anvil_ok && break
@@ -119,25 +119,38 @@ if [ "$CHAIN_ENV" = "local" ]; then
 fi
 
 # ---------- 停掉可能残留的旧进程 ----------
-for name in op-geth op-node op-batcher op-proposer; do
+_kill_and_wait() {
+  local pid="$1" name="$2"
+  kill "$pid" 2>/dev/null || true
+  for _ in $(seq 1 20); do
+    kill -0 "$pid" 2>/dev/null || return 0
+    sleep 0.25
+  done
+  echo "  $name (pid $pid) did not exit, sending SIGKILL..."
+  kill -9 "$pid" 2>/dev/null || true
+  sleep 0.5
+}
+for name in op-proposer op-batcher op-node op-geth; do
   pid_file="$PID_DIR/${name}.pid"
   if [ -f "$pid_file" ]; then
     old_pid=$(cat "$pid_file")
     if kill -0 "$old_pid" 2>/dev/null; then
-      echo "Killing old $name (pid $old_pid)..."
-      kill "$old_pid" 2>/dev/null || true
+      echo "Killing old $name (pid $old_pid) [from pid file]..."
+      _kill_and_wait "$old_pid" "$name"
     fi
     rm -f "$pid_file"
   fi
+  for orphan in $(pgrep -x "$name" 2>/dev/null); do
+    echo "Killing orphan $name (pid $orphan) [by process name]..."
+    _kill_and_wait "$orphan" "$name"
+  done
 done
-# 也按端口杀残留进程（PID 文件可能过期）
 for port in 8645 8651 30303 9545 8548 8560; do
   for pid in $(lsof -i :$port -t 2>/dev/null); do
     echo "Killing process on port $port (pid $pid)..."
-    kill "$pid" 2>/dev/null || true
+    _kill_and_wait "$pid" "port:$port"
   done
 done
-sleep 1
 
 # ---------- 清理 rollup.json 中当前 op-node 不支持的字段 ----------
 if jq -e '.da_challenge_contract_address' "$OP_NODE_ROLLUP_FILE" >/dev/null 2>&1; then
@@ -233,14 +246,14 @@ if [ "${SKIP_BATCHER:-0}" != "1" ]; then
   echo "  op-batcher started (pid $(cat $PID_DIR/op-batcher.pid)), log: $LOG_DIR/op-batcher.log"
 fi
 
-# ---------- 启动 op-proposer（可选；若启用 fault proofs 需先 init anchor state）----------
+# ---------- 启动 op-proposer ----------
 if [ "${SKIP_PROPOSER:-0}" != "1" ]; then
-  if [ "$USE_FAULT_PROOFS" = "true" ]; then
-    bash "$SCRIPT_DIR/initialize-anchorState.sh" || true
-  fi
   echo "Starting op-proposer..."
-  PROPOSER_L2OO="--l2oo-address=$(jq -r .L2OutputOracleProxy $DEPLOYMENT_OUTFILE)"
-  [ "$USE_FAULT_PROOFS" = "true" ] && PROPOSER_L2OO="--game-factory-address=$(jq -r .DisputeGameFactoryProxy $DEPLOYMENT_OUTFILE) --proposal-interval=${PROPOSAL_INTERVAL:-30s} --game-type=${GAME_TYPE:-0}"
+  if [ "$USE_FAULT_PROOFS" = "true" ]; then
+    PROPOSER_L2OO="--game-factory-address=$(jq -r .DisputeGameFactoryProxy "$DEPLOYMENT_OUTFILE") --proposal-interval=${PROPOSAL_INTERVAL:-30s} --game-type=${GAME_TYPE:-0}"
+  else
+    PROPOSER_L2OO="--l2oo-address=$(jq -r .L2OutputOracleProxy "$DEPLOYMENT_OUTFILE")"
+  fi
   PROPOSER_FLAGS="--log.level=debug --rpc.port=8560 --rollup-rpc=$OP_NODE_RPC_URL --private-key=$GS_PROPOSER_PRIVATE_KEY --l1-eth-rpc=$L1_RPC_URL $PROPOSER_L2OO --poll-interval=30s --network-timeout=600s --num-confirmations=1 --wait-node-sync=${WAIT_NODE_SYNC:-true}"
   nohup op-proposer $PROPOSER_FLAGS >> "$LOG_DIR/op-proposer.log" 2>&1 &
   echo $! > "$PID_DIR/op-proposer.pid"
