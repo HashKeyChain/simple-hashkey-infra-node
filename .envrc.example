@@ -6,7 +6,7 @@
 export DEPLOY_ADDRESS=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 export DEPLOY_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 
-# Admin account
+# Admin account (must match the key — use `cast wallet address --private-key <key>` to verify)
 export GS_ADMIN_ADDRESS=0x2546BcD3c84621e976D8185a91A922aE77ECEc30
 export GS_ADMIN_PRIVATE_KEY=0xea6c44ac03bff858b476bba40716402b03e41b8e97e276d1baec7c37d42484a0
 
@@ -42,7 +42,7 @@ export L2_BLOCK_TIME=2
 # The kind of RPC provider, used to inform optimal transactions receipts
 # fetching. Valid options: alchemy, quicknode, infura, parity, nethermind,
 # debug_geth, erigon, basic, any.
-export L1_RPC_KIND=alchemy
+export L1_RPC_KIND=basic
 
 ##################################################
 #               Contract Deployment              #
@@ -53,39 +53,31 @@ export L1_RPC_URL=http://localhost:8545
 export L2_RPC_URL=http://localhost:8645
 export OP_ROLLUP_PORT=9545
 export OP_BATCHER_PORT=9645
+export OP_BATCHER_DATA_AVAILABILITY_TYPE=calldata
 export OP_NODE_RPC_URL=http://localhost:$OP_ROLLUP_PORT
 export OP_BATCHER_RPC_URL=http://localhost:$OP_BATCHER_PORT
 
 ##################################################
-#           Component Version References         #
+#    Component Versions (used by build-components.sh)
 ##################################################
 
-# op-geth version (from ethereum-optimism/op-geth releases)
+# op-geth: tag/branch from ethereum-optimism/op-geth
 export OP_GETH_REF=v1.101605.0
 
-# op-node version (from ethereum-optimism/optimism releases, e.g., op-node/v1.9.5)
+# op-node / op-batcher / op-proposer: tag/branch from ethereum-optimism/optimism monorepo
+# build-components.sh builds each via git worktree without affecting contract source
 export OP_NODE_REF=feature/upgrade_cgt
-
-# op-batcher version
 export OP_BATCHER_REF=op-batcher/v1.16.3
-
-# op-proposer version
 export OP_PROPOSER_REF=op-proposer/v1.10.0
 
-# op-challenger version
-export OP_CHALLENGER_REF=v1.9.5
-
-# op-program version (for fault proofs)
-export OP_PROGRAM_REF=v1.9.5
-
-# cannon version (for fault proofs)
-export CANNON_REF=v1.9.5
-
-# op-deployer version
-export OP_DEPLOYER_REF=v1.9.5
-
-# contracts-bedrock version
+# contracts-bedrock: used by deploy-contracts.sh for git checkout
 export OP_CONTRACTS_REF=op-contracts/v2.0.0-beta.2
+
+# Not yet used by scripts, kept for reference
+export OP_CHALLENGER_REF=v1.9.5
+export OP_PROGRAM_REF=v1.9.5
+export CANNON_REF=v1.9.5
+export OP_DEPLOYER_REF=v1.9.5
 
 ##################################################
 
@@ -104,11 +96,6 @@ export TENDERLY_USERNAME=
 
 # Optional Etherscan API key for contract verification
 export ETHERSCAN_API_KEY=
-
-# Private key to use for contract deployments, you don't need to worry about
-# this for the Getting Started guide.
-# 0x70997970C51812dc3A010C7d01b50e0d17dc79C8, the account is from anvil's default test account.
-export PRIVATE_KEY=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
 
 # base path, used for the project
 export BASE_PATH=$PWD
@@ -130,9 +117,12 @@ export STATE_DUMP_PATH=$CONTRACTS_BEDROCK_PATH/deployments/state-dump-latest.jso
 export OP_GETH_GENESIS_FILE=$CONTRACTS_BEDROCK_PATH/deployments/genesis.json
 export OP_NODE_ROLLUP_FILE=$CONTRACTS_BEDROCK_PATH/deployments/rollup.json
 
-# custom gas token. Fields: useCustomGasToken, customGasTokenAddress
+# Custom gas token. Set USE_CUSTOM_GAS_TOKEN=true and provide an ERC20 address on L1.
+# If address is zero or has no code, deploy-contracts.sh will deploy an ERC20Mock.
 export USE_CUSTOM_GAS_TOKEN=false
 export CUSTOM_GAS_TOKEN_ADDRESS=0x0000000000000000000000000000000000000000
 
-# Choice to use L2OutputOracle or FaultDisputeGame, false: L2OutputOracle, true: FaultDisputeGame. Field: useFaultProofs
+# L2OutputOracle or FaultDisputeGame mode.
+# Initial deployment should use false (L2OO). Upgrade later via upgrade-to-fault-proofs.sh.
 export USE_FAULT_PROOFS=false
+export GAME_TYPE=0

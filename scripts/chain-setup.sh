@@ -1,20 +1,21 @@
 #!/bin/bash
 #
-# 一键生成 rollup.json 和 genesis.json（部署 L1 合约并生成 L2 配置）。
-# 不启动 L2 节点，仅完成配置生成。
-# 首次部署为 L2OutputOracle 链（USE_FAULT_PROOFS=false），合约版本见 .envrc 中 OP_CONTRACTS_REF（如 op-contracts/v2.0.0-beta.2）。
-# 升级到 PermissionedDisputeGame 见：scripts/upgrade-to-fault-proofs.sh
+# Generate rollup.json and genesis.json (deploy L1 contracts and produce L2 config).
+# Does not start L2 services — only generates config files.
+# Initial deployment uses L2OutputOracle (USE_FAULT_PROOFS=false).
+# Contract version is set by OP_CONTRACTS_REF in .envrc (e.g. op-contracts/v2.0.0-beta.2).
+# To upgrade to PermissionedDisputeGame, see: scripts/upgrade-to-fault-proofs.sh
 #
-# 用法:
+# Usage:
 #   bash scripts/chain-setup.sh [local|server]
 #
-# 参数:
-#   local  - 本地环境：若 L1 未运行则自动启动 anvil，再部署合约并生成配置
-#   server - 服务器环境：使用 .envrc 中的 L1_RPC_URL，直接部署并生成配置
+# Args:
+#   local  - start anvil if not running, deploy contracts, generate config
+#   server - use L1_RPC_URL from .envrc, deploy contracts, generate config
 #
-# 若不传参，则根据 L1_RPC_URL 自动判断（含 localhost/127.0.0.1 视为 local）。
+# Auto-detects mode from L1_RPC_URL if no argument given.
 #
-# 生成文件位置:
+# Output files:
 #   - $DEPLOYMENT_CONFIG_PATH/rollup.json
 #   - $DEPLOYMENT_CONFIG_PATH/genesis.json
 #   - $DEPLOYMENT_CONFIG_PATH/artifact.json
@@ -29,7 +30,7 @@ cd "$BASE_PATH"
 
 source .envrc
 
-# 解析运行环境：local | server
+# Detect environment
 CHAIN_ENV="${1:-}"
 
 if [ -z "$CHAIN_ENV" ]; then
@@ -46,7 +47,7 @@ if [ "$CHAIN_ENV" != "local" ] && [ "$CHAIN_ENV" != "server" ]; then
   exit 1
 fi
 
-# local 时：用本机 anvil，且生成文件放到 config/local（不放到 getting-started）
+# local mode: use local anvil, output config to config/local
 if [ "$CHAIN_ENV" = "local" ]; then
   export L1_RPC_URL="http://localhost:8545"
   export DEPLOYMENT_CONTEXT=local
@@ -59,7 +60,7 @@ echo "L1_RPC_URL=$L1_RPC_URL"
 echo "DEPLOYMENT_CONFIG_PATH=$DEPLOYMENT_CONFIG_PATH"
 echo ""
 
-# 等待 L1 RPC 就绪
+# Wait for L1 RPC
 _l1_ok() {
   curl -sf -X POST -H "Content-Type: application/json" \
     --connect-timeout 1 --max-time 2 \
@@ -92,19 +93,19 @@ if [ "$CHAIN_ENV" = "local" ]; then
     wait_l1
   fi
 else
-  # server: 直接检查 L1 可用
+  # server: verify L1 is reachable
   echo "Checking L1 RPC..."
   wait_l1
 fi
 
 echo ""
 echo "Running contract deployment and generating genesis/rollup config..."
+export CHAIN_ENV
 bash "$SCRIPT_DIR/deploy-contracts.sh"
 
-# 若本次脚本启动了 anvil，可选保留或关闭（保留便于后续 chain-start 使用）
 if [ -n "$ANVIL_PID" ]; then
   echo ""
-  echo "Anvil is still running in container 'anvil-chain'. Stop with: docker stop anvil-chain"
+  echo "Anvil is still running (pid $ANVIL_PID). It will be reused by chain-start."
 fi
 
 echo ""

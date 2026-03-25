@@ -59,9 +59,10 @@ if ! curl -sf --connect-timeout 2 -X POST -H "Content-Type: application/json" \
   echo "Error: L1 RPC not reachable at $L1_RPC_URL. Start L1 first."
   exit 1
 fi
+OP_NODE_RPC_URL="${OP_NODE_RPC_URL:-http://localhost:${OP_ROLLUP_PORT:-9545}}"
 if ! curl -sf --connect-timeout 2 -X POST -H "Content-Type: application/json" \
-  --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' "http://localhost:9545" >/dev/null; then
-  echo "Error: op-node RPC not reachable. Start chain (op-node) first."
+  --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' "$OP_NODE_RPC_URL" >/dev/null; then
+  echo "Error: op-node RPC not reachable at $OP_NODE_RPC_URL. Start chain (op-node) first."
   exit 1
 fi
 

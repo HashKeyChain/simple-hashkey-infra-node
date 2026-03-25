@@ -1,12 +1,19 @@
 #!/bin/bash
 #
-# 一键启动链：若配置未生成则先执行 chain-setup，再执行 chain-start。
-# 仅简化「先 setup 再 start」为一条命令，适用于 local 或 server。
+# One-click chain launcher: build components -> deploy contracts -> start services.
 #
-# 用法:
+# Usage:
 #   bash scripts/chain-up.sh [local|server]
 #
-# 若 config/<env>/rollup.json 已存在则直接 start，否则先 setup 再 start。
+# Steps:
+#   1. Build op-geth / op-node / op-batcher / op-proposer (skip if binaries exist in bin/)
+#   2. Run chain-setup if config not yet generated (deploy L1 contracts + generate genesis/rollup)
+#   3. Run chain-start (start all services)
+#
+# Environment variables (optional):
+#   SKIP_BUILD=1     - skip build step (use existing binaries in bin/)
+#   FORCE_BUILD=1    - force rebuild all components
+#   FORCE_SETUP=1    - force re-deploy contracts
 #
 
 set -e
@@ -23,6 +30,14 @@ if [ -z "$CHAIN_ENV" ]; then
   else
     CHAIN_ENV=server
   fi
+fi
+
+# ---------- Step 1: Build components ----------
+if [ "${SKIP_BUILD:-0}" != "1" ]; then
+  echo "=== Step 1: Building components ==="
+  bash "$SCRIPT_DIR/build-components.sh"
+else
+  echo "=== Step 1: Skipping build (SKIP_BUILD=1) ==="
 fi
 
 if [ "$CHAIN_ENV" = "local" ]; then
@@ -42,21 +57,19 @@ fi
 
 if [ "$NEED_SETUP" = "1" ]; then
   echo "Running chain-setup..."
-  # setup 会重新部署 L1 合约，需要清掉旧的 op-geth 数据（genesis 会变）
+  # Re-deploying L1 contracts requires clean op-geth data (genesis will change)
   export CLEAN_OP_GETH_DATADIR=1
-  # 清掉 op-node safedb（旧链数据不兼容）
+  # Remove stale op-node safedb (incompatible with new chain)
   rm -rf "$BASE_PATH/data/op-node/safedb" 2>/dev/null || true
-  # local 时停掉旧 anvil（重新部署需要干净的 L1）
+  # Stop old anvil in local mode (need a fresh L1 for re-deployment)
   if [ "$CHAIN_ENV" = "local" ]; then
     echo "Stopping old anvil..."
-    # 停本机 anvil 进程
     if [ -f "$BASE_PATH/data/pids/anvil.pid" ]; then
       kill "$(cat "$BASE_PATH/data/pids/anvil.pid")" 2>/dev/null || true
       rm -f "$BASE_PATH/data/pids/anvil.pid"
     fi
-    # 也清理可能残留的 Docker anvil
     docker rm -f anvil-chain 2>/dev/null || true
-    # 确保 8545 端口释放
+    # Ensure port 8545 is free
     for pid in $(lsof -i :8545 -t 2>/dev/null); do
       kill "$pid" 2>/dev/null || true
     done

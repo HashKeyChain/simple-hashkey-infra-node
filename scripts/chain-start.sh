@@ -1,20 +1,20 @@
 #!/bin/bash
 #
-# 一键启动所有服务（L1 可选、op-geth、op-node、op-batcher、op-proposer）。
-# 需先执行 chain-setup.sh 生成 rollup.json 和 genesis.json。
+# Start all services (L1 optional, op-geth, op-node, op-batcher, op-proposer).
+# Requires chain-setup.sh to have been run first to generate rollup.json and genesis.json.
 #
-# 用法:
+# Usage:
 #   bash scripts/chain-start.sh [local|server]
 #
-# 参数:
-#   local  - 本地：若 L1 未运行则启动 anvil，再启动 op-geth / op-node / batcher / proposer
-#   server - 服务器：不启动 L1，仅启动 op-geth / op-node / batcher / proposer
+# Args:
+#   local  - start anvil if not running, then start op-geth / op-node / batcher / proposer
+#   server - skip L1, only start op-geth / op-node / batcher / proposer
 #
-# 若不传参，根据 L1_RPC_URL 自动判断。
+# Auto-detects mode from L1_RPC_URL if no argument given.
 #
-# 环境变量（可选）:
-#   SKIP_BATCHER=1   - 不启动 op-batcher
-#   SKIP_PROPOSER=1  - 不启动 op-proposer
+# Environment variables (optional):
+#   SKIP_BATCHER=1   - do not start op-batcher
+#   SKIP_PROPOSER=1  - do not start op-proposer
 #
 
 set -e
@@ -25,13 +25,13 @@ cd "$BASE_PATH"
 
 source .envrc
 
-# 数据与日志目录
+# Data and log directories
 DATA_DIR="${BASE_PATH}/data"
 LOG_DIR="${DATA_DIR}/logs"
 PID_DIR="${DATA_DIR}/pids"
 mkdir -p "$LOG_DIR" "$PID_DIR"
 
-# 解析运行环境
+# Detect environment
 CHAIN_ENV="${1:-}"
 if [ -z "$CHAIN_ENV" ]; then
   if echo "$L1_RPC_URL" | grep -qE 'localhost|127\.0\.0\.1'; then
@@ -47,18 +47,22 @@ if [ "$CHAIN_ENV" != "local" ] && [ "$CHAIN_ENV" != "server" ]; then
   exit 1
 fi
 
-# local 时：用本机 anvil，且从 config/local 读配置（与 chain-setup local 一致）
+# local mode: use local anvil and config/local
 if [ "$CHAIN_ENV" = "local" ]; then
   export L1_RPC_URL="http://localhost:8545"
-  export L2_RPC_URL="http://localhost:8645"
-  export OP_NODE_RPC_URL="http://localhost:9545"
   export DEPLOYMENT_CONFIG_PATH="$BASE_PATH/config/local"
-  export OP_GETH_GENESIS_FILE="$DEPLOYMENT_CONFIG_PATH/genesis.json"
-  export OP_NODE_ROLLUP_FILE="$DEPLOYMENT_CONFIG_PATH/rollup.json"
-  export DEPLOYMENT_OUTFILE="$DEPLOYMENT_CONFIG_PATH/artifact.json"
 fi
 
-# 检查必要配置是否已生成
+# All L2 services run locally
+export L2_RPC_URL="http://localhost:8645"
+export OP_NODE_RPC_URL="http://localhost:${OP_ROLLUP_PORT:-9545}"
+
+# Config file paths from DEPLOYMENT_CONFIG_PATH
+export OP_GETH_GENESIS_FILE="${DEPLOYMENT_CONFIG_PATH}/genesis.json"
+export OP_NODE_ROLLUP_FILE="${DEPLOYMENT_CONFIG_PATH}/rollup.json"
+export DEPLOYMENT_OUTFILE="${DEPLOYMENT_CONFIG_PATH}/artifact.json"
+
+# Verify required config files exist
 if [ ! -f "$OP_NODE_ROLLUP_FILE" ] || [ ! -f "$OP_GETH_GENESIS_FILE" ]; then
   echo "Error: rollup.json or genesis.json not found. Run first: bash scripts/chain-setup.sh $CHAIN_ENV"
   echo "  OP_NODE_ROLLUP_FILE=$OP_NODE_ROLLUP_FILE"
@@ -71,7 +75,7 @@ echo "CHAIN_ENV=$CHAIN_ENV"
 echo "L1_RPC_URL=$L1_RPC_URL"
 echo ""
 
-# ---------- L1 (仅 local) ----------
+# ---------- L1 (local only) ----------
 _anvil_ok() {
   curl -sf -X POST -H "Content-Type: application/json" \
     --connect-timeout 1 --max-time 2 \
@@ -101,7 +105,7 @@ if [ "$CHAIN_ENV" = "local" ]; then
     fi
   fi
 
-  # 验证 L1 上 SystemConfig 合约是否存在（anvil 重建后合约会丢失）
+  # Verify SystemConfig contract exists on L1 (may be lost after anvil restart)
   L1_SYSTEM_CONFIG=$(jq -r '.l1_system_config_address // empty' "$OP_NODE_ROLLUP_FILE" 2>/dev/null)
   if [ -n "$L1_SYSTEM_CONFIG" ]; then
     SC_CODE=$(curl -sf -X POST -H "Content-Type: application/json" \
@@ -118,7 +122,7 @@ if [ "$CHAIN_ENV" = "local" ]; then
   fi
 fi
 
-# ---------- 停掉可能残留的旧进程 ----------
+# ---------- Kill stale processes ----------
 _kill_and_wait() {
   local pid="$1" name="$2"
   kill "$pid" 2>/dev/null || true
@@ -152,14 +156,14 @@ for port in 8645 8651 30303 9545 8548 8560; do
   done
 done
 
-# ---------- 清理 rollup.json 中当前 op-node 不支持的字段 ----------
+# ---------- Remove unsupported fields from rollup.json ----------
 if jq -e '.da_challenge_contract_address' "$OP_NODE_ROLLUP_FILE" >/dev/null 2>&1; then
   echo "Removing unsupported field 'da_challenge_contract_address' from rollup.json..."
   jq 'del(.da_challenge_contract_address)' "$OP_NODE_ROLLUP_FILE" > "${OP_NODE_ROLLUP_FILE}.tmp" \
     && mv "${OP_NODE_ROLLUP_FILE}.tmp" "$OP_NODE_ROLLUP_FILE"
 fi
 
-# ---------- 校验 rollup.json 的 L1 genesis hash 是否和实际 L1 一致 ----------
+# ---------- Validate L1 genesis hash in rollup.json ----------
 _ROLLUP_L1_NUM=$(jq -r '.genesis.l1.number' "$OP_NODE_ROLLUP_FILE" 2>/dev/null)
 _ROLLUP_L1_HASH=$(jq -r '.genesis.l1.hash' "$OP_NODE_ROLLUP_FILE" 2>/dev/null)
 if [ -n "$_ROLLUP_L1_NUM" ] && [ "$_ROLLUP_L1_NUM" != "null" ]; then
@@ -177,7 +181,7 @@ if [ -n "$_ROLLUP_L1_NUM" ] && [ "$_ROLLUP_L1_NUM" != "null" ]; then
   fi
 fi
 
-# ---------- 注入 chain_op_config（op-node v1.11+ 必须）----------
+# ---------- Inject chain_op_config (required by op-node v1.11+) ----------
 if ! jq -e '.chain_op_config' "$OP_NODE_ROLLUP_FILE" >/dev/null 2>&1; then
   echo "Injecting chain_op_config into rollup.json (required by op-node v1.11+)..."
   jq '. + {
@@ -190,7 +194,7 @@ if ! jq -e '.chain_op_config' "$OP_NODE_ROLLUP_FILE" >/dev/null 2>&1; then
     && mv "${OP_NODE_ROLLUP_FILE}.tmp" "$OP_NODE_ROLLUP_FILE"
 fi
 
-# ---------- JWT（op-geth / op-node 共用）----------
+# ---------- JWT secret (shared by op-geth and op-node) ----------
 export OP_GETH_DATA_PATH="${DATA_DIR}/op-geth"
 mkdir -p "$OP_GETH_DATA_PATH"
 JWT_FILE="${OP_GETH_DATA_PATH}/jwt.txt"
@@ -209,14 +213,14 @@ if [ ! -d "$OP_GETH_DATA_PATH/geth" ]; then
   op-geth init --state.scheme=hash --datadir="$OP_GETH_DATA_PATH" "$OP_GETH_GENESIS_FILE"
 fi
 
-# ---------- 启动 op-geth ----------
+# ---------- Start op-geth ----------
 echo "Starting op-geth..."
 OP_GETH_FLAGS="--verbosity=3 --datadir=$OP_GETH_DATA_PATH --http --http.corsdomain=* --http.vhosts=* --http.addr=0.0.0.0 --http.port=8645 --http.api=web3,debug,eth,txpool,net,engine,miner --ws --ws.addr=0.0.0.0 --ws.port=8646 --ws.origins=* --ws.api=debug,eth,txpool,net,engine,miner --syncmode=full --gcmode=archive --nodiscover --maxpeers=0 --networkid=42069 --authrpc.vhosts=* --authrpc.addr=0.0.0.0 --authrpc.port=8651 --authrpc.jwtsecret=$JWT_FILE --state.scheme=hash"
 nohup op-geth $OP_GETH_FLAGS >> "$LOG_DIR/op-geth.log" 2>&1 &
 echo $! > "$PID_DIR/op-geth.pid"
 echo "  op-geth started (pid $(cat $PID_DIR/op-geth.pid)), log: $LOG_DIR/op-geth.log"
 
-# 等待 engine RPC 就绪
+# Wait for engine RPC to be ready
 echo "Waiting for op-geth engine..."
 for i in $(seq 1 30); do
   if curl -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' http://localhost:8645 &>/dev/null; then
@@ -226,7 +230,7 @@ for i in $(seq 1 30); do
 done
 sleep 2
 
-# ---------- 启动 op-node ----------
+# ---------- Start op-node ----------
 echo "Starting op-node..."
 SAFEDB_PATH="${DATA_DIR}/op-node/safedb"
 mkdir -p "$(dirname "$SAFEDB_PATH")"
@@ -237,7 +241,7 @@ echo "  op-node started (pid $(cat $PID_DIR/op-node.pid)), log: $LOG_DIR/op-node
 
 sleep 3
 
-# ---------- 启动 op-batcher（可选）----------
+# ---------- Start op-batcher (optional) ----------
 if [ "${SKIP_BATCHER:-0}" != "1" ]; then
   echo "Starting op-batcher..."
   BATCHER_FLAGS="--log.level=debug --l1-eth-rpc=$L1_RPC_URL --l2-eth-rpc=$L2_RPC_URL --rpc.port=$OP_BATCHER_PORT --rollup-rpc=$OP_NODE_RPC_URL --private-key=$GS_BATCHER_PRIVATE_KEY --max-channel-duration=${MAX_CHANNEL_DURATION:-300} --poll-interval=${POLL_INTERVAL:-6s} --sub-safety-margin=${SUB_SAFETY_MARGIN:-10} --resubmission-timeout=${RESUBMISSION_TIMEOUT:-48s} --max-l1-tx-size-bytes=${MAX_L1_TX_SIZE_BYTES:-1000} --data-availability-type=${OP_BATCHER_DATA_AVAILABILITY_TYPE:-calldata} --txmgr.max-retries=${OP_PROPOSER_TXMGR_MAX_RETRIES:-2} --rpc.enable-admin --network-timeout=600s --num-confirmations=1 --safe-abort-nonce-too-low-count=${SAFE_ABORT_NONCE_TOO_LOW_COUNT:-3}"
@@ -246,7 +250,7 @@ if [ "${SKIP_BATCHER:-0}" != "1" ]; then
   echo "  op-batcher started (pid $(cat $PID_DIR/op-batcher.pid)), log: $LOG_DIR/op-batcher.log"
 fi
 
-# ---------- 启动 op-proposer ----------
+# ---------- Start op-proposer (optional) ----------
 if [ "${SKIP_PROPOSER:-0}" != "1" ]; then
   echo "Starting op-proposer..."
   if [ "$USE_FAULT_PROOFS" = "true" ]; then
