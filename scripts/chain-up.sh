@@ -40,18 +40,33 @@ else
   echo "=== Step 1: Skipping build (SKIP_BUILD=1) ==="
 fi
 
+source .envrc 2>/dev/null || true
 if [ "$CHAIN_ENV" = "local" ]; then
   CONFIG_DIR="$BASE_PATH/config/local"
 else
-  source .envrc 2>/dev/null || true
   CONFIG_DIR="${DEPLOYMENT_CONFIG_PATH:-$BASE_PATH/config/getting-started}"
 fi
 
+# ---------- Step 2: Detect if setup is needed ----------
 NEED_SETUP=0
+ENV_MARKER="$BASE_PATH/data/.last_chain_env"
+CURRENT_ENV_SIG="${CHAIN_ENV}|${L1_RPC_URL:-}"
+
 if [ ! -f "$CONFIG_DIR/rollup.json" ] || [ ! -f "$CONFIG_DIR/genesis.json" ]; then
+  echo "Config files not found in $CONFIG_DIR, setup required."
+  NEED_SETUP=1
+elif [ -f "$ENV_MARKER" ]; then
+  LAST_ENV_SIG=$(cat "$ENV_MARKER")
+  if [ "$CURRENT_ENV_SIG" != "$LAST_ENV_SIG" ]; then
+    echo "Environment changed: was [$LAST_ENV_SIG], now [$CURRENT_ENV_SIG]. Re-setup required."
+    NEED_SETUP=1
+  fi
+else
+  echo "No environment marker found, setup required."
   NEED_SETUP=1
 fi
 if [ "${FORCE_SETUP:-0}" = "1" ]; then
+  echo "FORCE_SETUP=1, forcing re-setup."
   NEED_SETUP=1
 fi
 
@@ -76,6 +91,11 @@ if [ "$NEED_SETUP" = "1" ]; then
     sleep 1
   fi
   bash "$SCRIPT_DIR/chain-setup.sh" "$CHAIN_ENV"
+
+  # Save environment marker so we can detect changes on next run
+  mkdir -p "$BASE_PATH/data"
+  echo "$CURRENT_ENV_SIG" > "$ENV_MARKER"
+  echo "Saved environment marker: $CURRENT_ENV_SIG"
 fi
 
 echo ""
