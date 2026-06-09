@@ -32,7 +32,7 @@ export L1_CHAIN_ID=11155111
 export L1_BLOCK_TIME=12
 
 # L2 chain information
-export L2_CHAIN_ID=42069
+export L2_CHAIN_ID=5536
 export L2_BLOCK_TIME=2
 
 ##################################################
@@ -63,8 +63,10 @@ export OP_BATCHER_RPC_URL=http://localhost:$OP_BATCHER_PORT
 # op-geth version (from ethereum-optimism/op-geth releases)
 export OP_GETH_REF=v1.101605.0
 
-# op-node version (from ethereum-optimism/optimism releases, e.g., op-node/v1.9.5)
-export OP_NODE_REF=feature/upgrade_cgt
+# op-node version: local CGT Jovian branch.
+# It includes Isthmus/Jovian upgrade transaction bytecode replacements for
+# L1Block/GasPriceOracle and related gas adjustments.
+export OP_NODE_REF=cgt-jovian/v1.16.5
 
 # op-batcher version
 export OP_BATCHER_REF=op-batcher/v1.16.3
@@ -87,6 +89,14 @@ export OP_DEPLOYER_REF=v1.9.5
 # contracts-bedrock version
 export OP_CONTRACTS_REF=op-contracts/v2.0.0-beta.2
 
+# Go toolchain:
+#  - op-node(optimism monorepo) go.mod requires go 1.21, but go 1.23+
+#    is incompatible with fjl/memsize v0.0.2 (link: invalid reference to runtime.stopTheWorld),
+#    so use go 1.22 for op-node.
+#  - op-geth v1.101605.0 go.mod requires go 1.24.
+#  Use "go1.22.12+auto": minimum 1.22.12, auto-upgrade when go.mod requires newer.
+export GOTOOLCHAIN=go1.22.12+auto
+
 ##################################################
 
 # Salt used via CREATE2 to determine implementation addresses
@@ -96,7 +106,7 @@ export OP_CONTRACTS_REF=op-contracts/v2.0.0-beta.2
 export IMPL_SALT=$(openssl rand -hex 32)
 
 # Name for the deployed network
-export DEPLOYMENT_CONTEXT=getting-started
+export DEPLOYMENT_CONTEXT=local
 
 # Optional Tenderly details for simulation link during deployment
 export TENDERLY_PROJECT=
@@ -131,8 +141,10 @@ export OP_GETH_GENESIS_FILE=$CONTRACTS_BEDROCK_PATH/deployments/genesis.json
 export OP_NODE_ROLLUP_FILE=$CONTRACTS_BEDROCK_PATH/deployments/rollup.json
 
 # custom gas token. Fields: useCustomGasToken, customGasTokenAddress
-export USE_CUSTOM_GAS_TOKEN=false
-export CUSTOM_GAS_TOKEN_ADDRESS=0x0000000000000000000000000000000000000000
+export USE_CUSTOM_GAS_TOKEN=true
+# Leave empty to let deploy-contracts.sh deploy a fresh CGT and fill the address.
+# Set this only when reusing a token that already exists on the current L1.
+export CUSTOM_GAS_TOKEN_ADDRESS=
 
 # Choice to use L2OutputOracle or FaultDisputeGame, false: L2OutputOracle, true: FaultDisputeGame. Field: useFaultProofs
 export USE_FAULT_PROOFS=false
