@@ -20,25 +20,25 @@ cp build/bin/geth $BASE_PATH/bin/op-geth
 # build op-node
 cd $BASE_PATH/optimism
 fetch_and_checkout $OP_NODE_REF
-just op-node
+make op-node
 cp $BASE_PATH/optimism/op-node/bin/op-node $BASE_PATH/bin/op-node
 
 # build op-proposer
 cd $BASE_PATH/optimism
 fetch_and_checkout $OP_PROPOSER_REF
-just op-proposer
+make op-proposer
 cp $BASE_PATH/optimism/op-proposer/bin/op-proposer $BASE_PATH/bin/op-proposer
 
 # build op-batcher
 cd $BASE_PATH/optimism
 fetch_and_checkout $OP_BATCHER_REF
-just op-batcher
+make op-batcher
 cp $BASE_PATH/optimism/op-batcher/bin/op-batcher $BASE_PATH/bin/op-batcher
 
 # build op-challenger
 cd $BASE_PATH/optimism
 fetch_and_checkout $OP_CHALLENGER_REF
-just op-challenger
+make op-challenger
 cp $BASE_PATH/optimism/op-challenger/bin/op-challenger $BASE_PATH/bin/op-challenger
 
 # # build op-deployer

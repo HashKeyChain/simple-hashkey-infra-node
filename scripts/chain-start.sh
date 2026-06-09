@@ -72,11 +72,11 @@ echo ""
 # ---------- L1 (仅 local) ----------
 if [ "$CHAIN_ENV" = "local" ]; then
   if ! cast block latest --rpc-url "$L1_RPC_URL" &>/dev/null; then
-    echo "Starting anvil..."
+    echo "Starting anvil with block time ${L1_BLOCK_TIME}s..."
     docker run --rm -d -p 8545:8545 --name anvil-chain \
       --entrypoint anvil ghcr.io/foundry-rs/foundry:v1.3.2 \
       --chain-id=$L1_CHAIN_ID --accounts=20 --host=0.0.0.0 \
-      --slots-in-an-epoch=1 --block-time 1
+      --slots-in-an-epoch=1 --block-time $L1_BLOCK_TIME
     echo "Waiting for anvil..."
     for i in $(seq 1 15); do
       cast block latest --rpc-url "$L1_RPC_URL" &>/dev/null && break
@@ -106,6 +106,8 @@ fi
 # ---------- 启动 op-geth ----------
 echo "Starting op-geth..."
 OP_GETH_FLAGS="--verbosity=3 --datadir=$OP_GETH_DATA_PATH --http --http.corsdomain=* --http.vhosts=* --http.addr=0.0.0.0 --http.port=8645 --http.api=web3,debug,eth,txpool,net,engine,miner --ws --ws.addr=0.0.0.0 --ws.port=8646 --ws.origins=* --ws.api=debug,eth,txpool,net,engine,miner --syncmode=full --gcmode=archive --nodiscover --maxpeers=0 --networkid=42069 --authrpc.vhosts=* --authrpc.addr=0.0.0.0 --authrpc.port=8651 --authrpc.jwtsecret=$JWT_FILE --state.scheme=hash"
+OP_GETH_FLAGS="$OP_GETH_FLAGS --override.fjord=1780653281"
+OP_GETH_FLAGS="$OP_GETH_FLAGS --override.granite=1780653291 --override.holocene=1780653301 --override.isthmus=1780653311 --override.jovian=1780653321"
 nohup op-geth $OP_GETH_FLAGS >> "$LOG_DIR/op-geth.log" 2>&1 &
 echo $! > "$PID_DIR/op-geth.pid"
 echo "  op-geth started (pid $(cat $PID_DIR/op-geth.pid)), log: $LOG_DIR/op-geth.log"

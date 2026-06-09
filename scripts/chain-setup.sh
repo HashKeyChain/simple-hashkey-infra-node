@@ -77,11 +77,11 @@ ANVIL_PID=""
 
 if [ "$CHAIN_ENV" = "local" ]; then
   if ! cast block latest --rpc-url "$L1_RPC_URL" &>/dev/null; then
-    echo "L1 not running. Starting anvil in background..."
+    echo "L1 not running. Starting anvil in background with block time ${L1_BLOCK_TIME}s..."
     docker run --rm -d -p 8545:8545 --name anvil-chain \
       --entrypoint anvil ghcr.io/foundry-rs/foundry:v1.3.2 \
       --chain-id=$L1_CHAIN_ID --accounts=20 --host=0.0.0.0 \
-      --slots-in-an-epoch=1 --block-time 1
+      --slots-in-an-epoch=1 --block-time $L1_BLOCK_TIME
     ANVIL_PID="docker"
     wait_l1
   else
@@ -91,6 +91,19 @@ else
   # server: 直接检查 L1 可用
   echo "Checking L1 RPC..."
   wait_l1
+fi
+
+# local 模式：给部署/运行账户充值。
+# anvil 只给它自己派生的 20 个账户预置余额，而 .envrc 里的 DEPLOY/GS_* 是自定义账户，
+# 在全新 anvil 上余额为 0，会导致后续 CGT/合约部署因 gas 不足失败。
+# 本地 Anvil 直接改余额，不走交易确认，避免受 L1_BLOCK_TIME 影响变慢。
+if [ "$CHAIN_ENV" = "local" ]; then
+  echo "Funding deploy/operator accounts..."
+  for addr in "$DEPLOY_ADDRESS" "$GS_ADMIN_ADDRESS" "$GS_BATCHER_ADDRESS" "$GS_PROPOSER_ADDRESS" "$GS_SEQUENCER_ADDRESS"; do
+    [ -z "$addr" ] && continue
+    cast rpc anvil_setBalance "$addr" 0x3635c9adc5dea00000 --rpc-url "$L1_RPC_URL" >/dev/null 2>&1 \
+      && echo "  funded $addr" || echo "  WARN: fund $addr failed"
+  done
 fi
 
 echo ""

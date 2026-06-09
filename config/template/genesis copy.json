@@ -21,6 +21,7 @@
     "regolithTime": 0,
     "canyonTime": 0,
     "ecotoneTime": 0,
+    "fjord_time": 1780652803,
     "terminalTotalDifficulty": 0,
     "terminalTotalDifficultyPassed": true,
     "optimism": {
@@ -30,7 +31,7 @@
     }
   },
   "nonce": "0x0",
-  "timestamp": "0x6a22958b",
+  "timestamp": "0x6a214e55",
   "extraData": "0x424544524f434b",
   "gasLimit": "0x1c9c380",
   "difficulty": "0x0",

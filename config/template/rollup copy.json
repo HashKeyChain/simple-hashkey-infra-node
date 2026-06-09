@@ -1,14 +1,14 @@
 {
   "genesis": {
     "l1": {
-      "hash": "0x8a2ff5d2d637084997d4c4006f09c62d428d3d8af850a601268ddea15409dbfc",
-      "number": 0
+      "hash": "0x8bf9973bb0cdcfbcdff2300ec36bfd7337953e4a49b49ac64056ae1def0846fc",
+      "number": 14
     },
     "l2": {
-      "hash": "0x0f8093115700f260c02b1f901584e8c7b40093b5c1369af6ec1ed34b8ec87951",
+      "hash": "0xd6a77bf60b7df1cfe81351e53c2314f1712039d8077344ca327e1f4f20cdc981",
       "number": 0
     },
-    "l2_time": 1780651403,
+    "l2_time": 1780567637,
     "system_config": {
       "batcherAddr": "0x642e61a27e84eae6cb00091b9ed6091a2450b3f5",
       "overhead": "0x0000000000000000000000000000000000000000000000000000000000000000",
@@ -26,6 +26,11 @@
   "canyon_time": 0,
   "delta_time": 0,
   "ecotone_time": 0,
+  "fjord_time": 1780652803,
+  "granite_time": 1780669557,
+  "holocene_time": 1780669567,
+  "isthmus_time": 1780669577,
+  "jovian_time": 1780669587,
   "batch_inbox_address": "0xff00000000000000000000000000000000042069",
   "deposit_contract_address": "0xdb72b7c70a0a6b2b4db06599fce8851ecb580191",
   "l1_system_config_address": "0x86699f5897f7aed74c55dc73dbd7ec14ec30531b",
@@ -34,10 +39,5 @@
     "eip1559Elasticity": 6,
     "eip1559Denominator": 50,
     "eip1559DenominatorCanyon": 250
-  },
-  "fjord_time": 1780653281,
-  "granite_time": 1780653291,
-  "holocene_time": 1780653301,
-  "isthmus_time": 1780653311,
-  "jovian_time": 1780653321
+  }
 }
