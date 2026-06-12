@@ -18,7 +18,6 @@ mkdir -p $DEPLOYMENT_CONFIG_PATH
 cd $CONTRACTS_BEDROCK_PATH
 # Remove lib dirs that often cause "unable to rmdir ... Directory not empty" on checkout;
 # forge install below will reinstall the correct versions for this ref.
-rm -rf lib/openzeppelin-contracts-v5 lib/solady-v0.0.245 lib/superchain-registry 2>/dev/null || true
 git checkout $OP_CONTRACTS_REF
 
 # If using a custom gas token and address is not set, deploy it first.
@@ -79,7 +78,20 @@ forge install
 echo "Dependencies OK. Building..."
 forge build --silent
 # --slow removed for faster batch deployment
-forge script scripts/Deploy.s.sol:Deploy --private-key $GS_ADMIN_PRIVATE_KEY --broadcast --rpc-url $L1_RPC_URL --batch-size 10
+CURRENT_MAX_FEE_PER_GAS=$(cast to-dec "$(cast rpc eth_gasPrice --rpc-url "$L1_RPC_URL" | tr -d '"')")
+CURRENT_PRIORITY_GAS_PRICE=$(cast to-dec "$(cast rpc eth_maxPriorityFeePerGas --rpc-url "$L1_RPC_URL" | tr -d '"')")
+DEPLOY_MAX_FEE_PER_GAS=$((CURRENT_MAX_FEE_PER_GAS * 2))
+DEPLOY_PRIORITY_GAS_PRICE=$((CURRENT_PRIORITY_GAS_PRICE * 2))
+echo "Using deployment gas fees:"
+echo "  maxFeePerGas:         $DEPLOY_MAX_FEE_PER_GAS wei (2x current eth_gasPrice: $CURRENT_MAX_FEE_PER_GAS)"
+echo "  maxPriorityFeePerGas: $DEPLOY_PRIORITY_GAS_PRICE wei (2x current eth_maxPriorityFeePerGas: $CURRENT_PRIORITY_GAS_PRICE)"
+forge script scripts/Deploy.s.sol:Deploy \
+  --private-key $GS_ADMIN_PRIVATE_KEY \
+  --broadcast \
+  --rpc-url $L1_RPC_URL \
+  --batch-size 10 \
+  --with-gas-price "$DEPLOY_MAX_FEE_PER_GAS" \
+  --priority-gas-price "$DEPLOY_PRIORITY_GAS_PRICE"
 
 # Create l2chain genesis state and load in file.
 export CONTRACT_ADDRESSES_PATH=$DEPLOYMENT_OUTFILE

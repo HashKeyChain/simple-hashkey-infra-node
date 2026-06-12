@@ -1,5 +1,7 @@
 # hashkey environment variables
 .envrc
+.envrc.local
+.envrc.testnet
 
 # ignore binary files
 bin/*
