@@ -19,6 +19,8 @@ EXPECTED_EIP1559_ELASTICITY="${EXPECTED_EIP1559_ELASTICITY:-0}"
 
 GAS_PRICE_ORACLE="0x420000000000000000000000000000000000000F"
 L1_BLOCK_PREDEPLOY="0x4200000000000000000000000000000000000015"
+BASE_FEE_VAULT="0x4200000000000000000000000000000000000019"
+OPERATOR_FEE_VAULT="0x420000000000000000000000000000000000001B"
 
 if [ "$L2_RPC" = "https://REPLACE_ME_L2_RPC" ] || [ "$L2_VERIFY_PRIVATE_KEY" = "0xREPLACE_ME" ]; then
   echo "ERROR: set L2_RPC and L2_VERIFY_PRIVATE_KEY before running."
@@ -109,15 +111,11 @@ echo -n "daFootprintGasScalar: "
 cast call "$L1_BLOCK_PREDEPLOY" "daFootprintGasScalar()(uint16)" --rpc-url "$L2_RPC" || true
 echo ""
 
-echo "== sender state =="
-BALANCE=$(cast balance "$FROM" --rpc-url "$L2_RPC")
-NONCE=$(cast nonce "$FROM" --rpc-url "$L2_RPC")
-echo "balance: $BALANCE"
-echo "nonce:   $NONCE"
-if [ "$BALANCE" = "0" ]; then
-  echo "ERROR: sender has no L2 native balance."
-  exit 1
-fi
+echo "== balances before transaction =="
+BASE_FEE_VAULT_BALANCE_BEFORE=$(cast balance "$BASE_FEE_VAULT" --rpc-url "$L2_RPC")
+OPERATOR_FEE_VAULT_BALANCE_BEFORE=$(cast balance "$OPERATOR_FEE_VAULT" --rpc-url "$L2_RPC")
+echo "baseFeeVault:     $BASE_FEE_VAULT_BALANCE_BEFORE"
+echo "operatorFeeVault: $OPERATOR_FEE_VAULT_BALANCE_BEFORE"
 echo ""
 
 echo "== send ordinary L2 transaction =="
@@ -138,6 +136,19 @@ if [ "$STATUS" != "0x1" ] && [ "$STATUS" != "1" ]; then
   echo "ERROR: transaction failed."
   exit 1
 fi
+
+echo ""
+echo "== balances after transaction =="
+BASE_FEE_VAULT_BALANCE_AFTER=$(cast balance "$BASE_FEE_VAULT" --rpc-url "$L2_RPC")
+OPERATOR_FEE_VAULT_BALANCE_AFTER=$(cast balance "$OPERATOR_FEE_VAULT" --rpc-url "$L2_RPC")
+BASE_FEE_VAULT_RECEIVED=$((BASE_FEE_VAULT_BALANCE_AFTER - BASE_FEE_VAULT_BALANCE_BEFORE))
+OPERATOR_FEE_VAULT_RECEIVED=$((OPERATOR_FEE_VAULT_BALANCE_AFTER - OPERATOR_FEE_VAULT_BALANCE_BEFORE))
+echo "baseFeeVaultBefore:     $BASE_FEE_VAULT_BALANCE_BEFORE"
+echo "baseFeeVaultAfter:      $BASE_FEE_VAULT_BALANCE_AFTER"
+echo "baseFeeVaultGot:        $BASE_FEE_VAULT_RECEIVED"
+echo "operatorFeeVaultBefore: $OPERATOR_FEE_VAULT_BALANCE_BEFORE"
+echo "operatorFeeVaultAfter:  $OPERATOR_FEE_VAULT_BALANCE_AFTER"
+echo "operatorFeeVaultGot:    $OPERATOR_FEE_VAULT_RECEIVED"
 
 echo ""
 echo "OK: Jovian verification passed."

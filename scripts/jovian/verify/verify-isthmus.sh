@@ -16,6 +16,7 @@ L2_VERIFY_PRIVATE_KEY="${L2_VERIFY_PRIVATE_KEY:?missing L2_VERIFY_PRIVATE_KEY in
 ISTHMUS_TIME="${ISTHMUS_TIME:-0}"
 
 GAS_PRICE_ORACLE="0x420000000000000000000000000000000000000F"
+OPERATOR_FEE_VAULT="0x420000000000000000000000000000000000001B"
 
 if [ "$L2_RPC" = "https://REPLACE_ME_L2_RPC" ] || [ "$L2_VERIFY_PRIVATE_KEY" = "0xREPLACE_ME" ]; then
   echo "ERROR: set L2_RPC and L2_VERIFY_PRIVATE_KEY before running."
@@ -35,8 +36,9 @@ echo ""
 
 echo "== latest block =="
 BLOCK_JSON=$(cast block latest --rpc-url "$L2_RPC" --json)
-echo "$BLOCK_JSON" | jq '{number,timestamp,baseFeePerGas,extraData,hash}'
+echo "$BLOCK_JSON" | jq '{number,timestamp,extraData,hash}'
 BLOCK_TIME=$(echo "$BLOCK_JSON" | jq -r '.timestamp')
+EXTRA_DATA=$(echo "$BLOCK_JSON" | jq -r '.extraData')
 if [[ "$BLOCK_TIME" == 0x* ]]; then
   BLOCK_TIME=$(cast to-dec "$BLOCK_TIME")
 fi
@@ -56,20 +58,27 @@ if [ "$IS_ISTHMUS" != "true" ]; then
 fi
 echo ""
 
-echo "== sender state =="
 BALANCE=$(cast balance "$FROM" --rpc-url "$L2_RPC")
-NONCE=$(cast nonce "$FROM" --rpc-url "$L2_RPC")
-echo "balance: $BALANCE"
-echo "nonce:   $NONCE"
 if [ "$BALANCE" = "0" ]; then
   echo "ERROR: sender has no L2 native balance."
   exit 1
 fi
+
+echo "== balances before transaction =="
+OPERATOR_FEE_VAULT_BALANCE_BEFORE=$(cast balance "$OPERATOR_FEE_VAULT" --rpc-url "$L2_RPC")
+echo "operatorFeeVault: $OPERATOR_FEE_VAULT_BALANCE_BEFORE"
 echo ""
 
 echo "== send ordinary L2 transaction =="
 RECEIPT_JSON=$(cast send "$TO" --value 0 --private-key "$L2_VERIFY_PRIVATE_KEY" --rpc-url "$L2_RPC" --json)
-echo "$RECEIPT_JSON" | jq '{transactionHash,status,blockNumber,gasUsed,effectiveGasPrice,l1Fee}'
+echo "$RECEIPT_JSON" | jq '{
+  transactionHash,
+  status,
+  blockNumber,
+  gasUsed,
+  effectiveGasPrice,
+  l1Fee
+}'
 
 STATUS=$(echo "$RECEIPT_JSON" | jq -r '.status')
 if [ "$STATUS" != "0x1" ] && [ "$STATUS" != "1" ]; then
@@ -78,5 +87,13 @@ if [ "$STATUS" != "0x1" ] && [ "$STATUS" != "1" ]; then
 fi
 
 echo ""
+echo "== balances after transaction =="
+OPERATOR_FEE_VAULT_BALANCE_AFTER=$(cast balance "$OPERATOR_FEE_VAULT" --rpc-url "$L2_RPC")
+OPERATOR_FEE_VAULT_RECEIVED=$((OPERATOR_FEE_VAULT_BALANCE_AFTER - OPERATOR_FEE_VAULT_BALANCE_BEFORE))
+echo "operatorFeeVaultBefore: $OPERATOR_FEE_VAULT_BALANCE_BEFORE"
+echo "operatorFeeVaultAfter:  $OPERATOR_FEE_VAULT_BALANCE_AFTER"
+echo "operatorFeeVaultGot:    $OPERATOR_FEE_VAULT_RECEIVED"
+
+echo ""
 echo "OK: Isthmus basic verification passed."
-echo "NOTE: EIP-7702 is enabled with Isthmus. Run scripts/jovian/7702/run.sh for the full SetCodeTx verification."
+echo "NOTE: EIP-7702 is enabled with Isthmus. Run scripts/jovian/verify/verify-7702.sh for the full SetCodeTx verification."

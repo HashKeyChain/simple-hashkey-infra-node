@@ -106,6 +106,6 @@ bash scripts/jovian/verify/verify-7702.sh
 - `query-systemconfig-params.sh`: queries L1 `SystemConfig`, L2 `L1Block`, latest L2 block `extraData`, and `GasPriceOracle` values using `verify.env`.
 - `verify-granite.sh`: latest block timestamp and ordinary L2 transaction.
 - `verify-holocene.sh`: EIP-1559 denominator/elasticity from block `extraData` and ordinary L2 transaction.
-- `verify-isthmus.sh`: `GasPriceOracle.isIsthmus()` and ordinary L2 transaction.
+- `verify-isthmus.sh`: EIP-1559 params from `extraData` (9-byte Holocene/Isthmus or 17-byte Jovian format), `GasPriceOracle.isIsthmus()`, and `OperatorFeeVault` balance before/after an ordinary L2 transaction.
 - `verify-jovian.sh`: `GasPriceOracle.isJovian()`, EIP-1559 params and `minBaseFee` from block `extraData`, L2 `L1Block` Jovian values, and ordinary L2 transaction receipt fields.
 - `verify-7702.sh`: runs the EIP-7702 SetCodeTx verifier using `L2_RPC` and `L2_VERIFY_PRIVATE_KEY` from `verify.env`; fork flags are printed but not enforced.
