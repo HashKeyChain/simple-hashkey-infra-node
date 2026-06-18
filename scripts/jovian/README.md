@@ -38,32 +38,66 @@ bash scripts/jovian/deploy-systemconfig.sh
 # 2. 把 SystemConfigProxy 升级到上一步输出的 implementation
 bash scripts/jovian/upgrade-systemconfig.sh <new_system_config_implementation>
 
-# 3. 查询当前 L1/L2 参数状态
+# 3. 停止 L2 服务；不要停止 Anvil/L1
+bash scripts/chain-stop.sh
+
+# 4. 配置分叉时间
+source .envrc
+NOW_HEX=$(cast block latest --rpc-url "$L1_RPC_URL" --json | jq -r .timestamp)
+NOW=$((NOW_HEX))
+FJORD=$((NOW + 120))
+GRANITE=$((FJORD + 300))
+HOLOCENE=$((GRANITE + 300))
+ISTHMUS=$((HOLOCENE + 300))
+JOVIAN=$((ISTHMUS + 300))
+
+jq \
+  --argjson fjord "$FJORD" \
+  --argjson granite "$GRANITE" \
+  --argjson holocene "$HOLOCENE" \
+  --argjson isthmus "$ISTHMUS" \
+  --argjson jovian "$JOVIAN" \
+  '.fjord_time = $fjord
+   | .granite_time = $granite
+   | .holocene_time = $holocene
+   | .isthmus_time = $isthmus
+   | .jovian_time = $jovian' \
+  "$DEPLOYMENT_CONFIG_PATH/rollup.json" > /tmp/rollup.json \
+  && mv /tmp/rollup.json "$DEPLOYMENT_CONFIG_PATH/rollup.json"
+
+# 5. 确保 op-geth 启动参数里使用同样的 fork override 时间
+rg -- '--override\.(fjord|granite|holocene|isthmus|jovian)' scripts/chain-start.sh \
+  || echo "WARN: configure --override.* in scripts/chain-start.sh before restart"
+
+# 6. 重启 L2 服务
+bash scripts/chain-start.sh local
+
+# 7. 查询当前 L1/L2 参数状态
 bash scripts/jovian/query-systemconfig-params.sh
 
-# 4. 设置 operator fee 参数
+# 8. 设置 operator fee 参数
 bash scripts/jovian/set-operator-fee.sh 1 1000000
 
-# 5. 发一笔 L2 交易验证 operator fee 和 Jovian receipt 字段
+# 9. 发一笔 L2 交易验证 operator fee 和 Jovian receipt 字段
 bash scripts/jovian/verify-jovian-fees.sh
 
-# 6. 设置 minBaseFee，单位是 wei
+# 10. 设置 minBaseFee，单位是 wei
 bash scripts/jovian/set-min-base-fee.sh 1000000000
 
-# 7. 验证 minBaseFee 是否进入 L2 block extraData，并且 baseFeePerGas >= minBaseFee
+# 11. 验证 minBaseFee 是否进入 L2 block extraData，并且 baseFeePerGas >= minBaseFee
 bash scripts/jovian/verify-min-base-fee.sh 1000000000
 
-# 8. 设置 EIP-1559 参数：denominator、elasticity
+# 12. 设置 EIP-1559 参数：denominator、elasticity
 bash scripts/jovian/set-eip1559-params.sh 250 6
 
-# 9. 设置 DA footprint gas scalar
+# 13. 设置 DA footprint gas scalar
 bash scripts/jovian/set-da-footprint-gas-scalar.sh 400
 
-# 10. 最后再统一查询一次
+# 14. 最后再统一查询一次
 bash scripts/jovian/query-systemconfig-params.sh
 ```
 
-L1 配置交易确认后，L2 不一定立刻生效。需要等 `op-node` derive 到包含该 L1 交易的 L1 block，后续 L2 block 才会带上新配置。
+配置分叉时间时只停止 L2，不要停止 Anvil/L1。`rollup.json` 给 `op-node` 使用，`--override.*` 给 `op-geth` 使用，两边时间必须一致。L1 配置交易确认后，L2 不一定立刻生效；需要等 `op-node` derive 到包含该 L1 交易的 L1 block，后续 L2 block 才会带上新配置。
 
 ## 3. 脚本说明
 
@@ -77,7 +111,8 @@ bash scripts/jovian/deploy-systemconfig.sh [contracts_ref]
 
 作用：
 
-- 切到指定 contracts 分支，默认 `cgt-jovian/contracts-v2.0.0-beta.2`。
+- 切到指定 contracts 分支；默认读取 `.envrc` 的 `CONTRACTS_UPGRADE_REF`。
+- 如果命令行传入 `[contracts_ref]`，则临时覆盖 `CONTRACTS_UPGRADE_REF`。
 - 编译合约并部署新的 `SystemConfig` implementation。
 - 只部署 implementation，不升级 proxy，不修改 `artifact.json`。
 
