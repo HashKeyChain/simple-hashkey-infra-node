@@ -20,6 +20,13 @@ cd $CONTRACTS_BEDROCK_PATH
 # forge install below will reinstall the correct versions for this ref.
 git checkout $OP_CONTRACTS_REF
 
+if [ "$OP_CONTRACTS_REF" = "op-contracts/v2.0.0-beta.3" ]; then
+  DEPLOY_SCRIPT="scripts/deploy/Deploy.s.sol:Deploy"
+else
+  DEPLOY_SCRIPT="scripts/Deploy.s.sol:Deploy"
+fi
+echo "Using deploy script: $DEPLOY_SCRIPT"
+
 # If using a custom gas token and address is not set, deploy it first.
 # Mint 10000 HSK (custom gas token) to deployer address.
 ZERO_ADDRESS="0x0000000000000000000000000000000000000000"
@@ -85,7 +92,7 @@ DEPLOY_PRIORITY_GAS_PRICE=$((CURRENT_PRIORITY_GAS_PRICE * 2))
 echo "Using deployment gas fees:"
 echo "  maxFeePerGas:         $DEPLOY_MAX_FEE_PER_GAS wei (2x current eth_gasPrice: $CURRENT_MAX_FEE_PER_GAS)"
 echo "  maxPriorityFeePerGas: $DEPLOY_PRIORITY_GAS_PRICE wei (2x current eth_maxPriorityFeePerGas: $CURRENT_PRIORITY_GAS_PRICE)"
-forge script scripts/Deploy.s.sol:Deploy \
+forge script $DEPLOY_SCRIPT \
   --private-key $GS_ADMIN_PRIVATE_KEY \
   --broadcast \
   --rpc-url $L1_RPC_URL \

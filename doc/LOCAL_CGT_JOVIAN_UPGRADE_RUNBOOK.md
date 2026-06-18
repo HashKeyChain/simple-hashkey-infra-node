@@ -13,7 +13,8 @@ bash scripts/chain-stop.sh || true
 docker stop anvil-chain 2>/dev/null || true
 
 rm -rf data/
-rm -rf config/local/
+source .envrc
+rm -rf "$DEPLOYMENT_CONFIG_PATH"/
 ```
 
 Clear the previous local custom gas token address. A freshly rebuilt Anvil chain does not contain contracts from the previous local chain:
@@ -49,7 +50,7 @@ echo "L2_BLOCK_TIME=$L2_BLOCK_TIME"
 Recommended values:
 
 ```bash
-export DEPLOYMENT_CONTEXT=local
+export DEPLOYMENT_CONTEXT=local-mainnet
 export USE_CUSTOM_GAS_TOKEN=true
 export L1_BLOCK_TIME=12
 export L2_BLOCK_TIME=2
@@ -79,30 +80,30 @@ This should:
 - Fund deploy/operator accounts on L1.
 - Deploy or reuse the custom gas token.
 - Deploy OP L1 contracts.
-- Generate `config/local/artifact.json`.
-- Generate `config/local/genesis.json`.
-- Generate `config/local/rollup.json`.
+- Generate `$DEPLOYMENT_CONFIG_PATH/artifact.json`.
+- Generate `$DEPLOYMENT_CONFIG_PATH/genesis.json`.
+- Generate `$DEPLOYMENT_CONFIG_PATH/rollup.json`.
 
 ## 4. Patch `rollup.json` Compatibility
 
 Refresh the L1 genesis hash from the currently running local Anvil chain. Use the L1 block number already recorded in `rollup.json`; this block hash changes every time the local L1 is rebuilt:
 
 ```bash
-L1_GENESIS_NUMBER=$(jq -r '.genesis.l1.number' config/local/rollup.json)
+L1_GENESIS_NUMBER=$(jq -r '.genesis.l1.number' "$DEPLOYMENT_CONFIG_PATH/rollup.json")
 L1_GENESIS_HASH=$(cast block "$L1_GENESIS_NUMBER" --rpc-url http://localhost:8545 --json | jq -r '.hash')
 
 jq --arg hash "$L1_GENESIS_HASH" \
   '.genesis.l1.hash = $hash' \
-  config/local/rollup.json > /tmp/rollup.json \
-  && mv /tmp/rollup.json config/local/rollup.json
+  "$DEPLOYMENT_CONFIG_PATH/rollup.json" > /tmp/rollup.json \
+  && mv /tmp/rollup.json "$DEPLOYMENT_CONFIG_PATH/rollup.json"
 ```
 
 Remove fields that the runtime `cgt-jovian/v1.16.5` op-node does not understand:
 
 ```bash
 jq 'del(.da_challenge_contract_address)' \
-  config/local/rollup.json > /tmp/rollup.json \
-  && mv /tmp/rollup.json config/local/rollup.json
+  "$DEPLOYMENT_CONFIG_PATH/rollup.json" > /tmp/rollup.json \
+  && mv /tmp/rollup.json "$DEPLOYMENT_CONFIG_PATH/rollup.json"
 ```
 
 Ensure `chain_op_config` exists:
@@ -112,21 +113,21 @@ jq '.chain_op_config = {
   "eip1559Elasticity": 6,
   "eip1559Denominator": 50,
   "eip1559DenominatorCanyon": 250
-}' config/local/rollup.json > /tmp/rollup.json \
-  && mv /tmp/rollup.json config/local/rollup.json
+}' "$DEPLOYMENT_CONFIG_PATH/rollup.json" > /tmp/rollup.json \
+  && mv /tmp/rollup.json "$DEPLOYMENT_CONFIG_PATH/rollup.json"
 ```
 
 Check:
 
 ```bash
-jq '{genesis, chain_op_config}' config/local/rollup.json
+jq '{genesis, chain_op_config}' "$DEPLOYMENT_CONFIG_PATH/rollup.json"
 ```
 
 Also verify the generated L1 contract addresses exist on the currently running Anvil chain. A code length of `3` means `0x`, i.e. the contract is missing from this L1:
 
 ```bash
 for key in SystemConfigProxy OptimismPortalProxy L1StandardBridgeProxy L2OutputOracleProxy; do
-  addr=$(jq -r ".$key" config/local/artifact.json)
+  addr=$(jq -r ".$key" "$DEPLOYMENT_CONFIG_PATH/artifact.json")
   len=$(cast code "$addr" --rpc-url http://localhost:8545 | wc -c | tr -d ' ')
   echo "$key $addr code_len=$len"
 done
@@ -187,10 +188,10 @@ NOW_HEX=$(cast block latest --rpc-url http://localhost:8645 --json | jq -r .time
 NOW=$((NOW_HEX))
 
 FJORD=$((NOW + 120))
-GRANITE=$((FJORD + 10))
-HOLOCENE=$((GRANITE + 10))
-ISTHMUS=$((HOLOCENE + 10))
-JOVIAN=$((ISTHMUS + 10))
+GRANITE=$((FJORD + 300))
+HOLOCENE=$((GRANITE + 300))
+ISTHMUS=$((HOLOCENE + 300))
+JOVIAN=$((ISTHMUS + 300))
 
 echo "FJORD=$FJORD"
 echo "GRANITE=$GRANITE"
@@ -199,7 +200,7 @@ echo "ISTHMUS=$ISTHMUS"
 echo "JOVIAN=$JOVIAN"
 ```
 
-Write these times to `config/local/rollup.json` for `op-node`:
+Write these times to `$DEPLOYMENT_CONFIG_PATH/rollup.json` for `op-node`:
 
 ```bash
 jq \
@@ -213,8 +214,8 @@ jq \
    | .holocene_time = $holocene
    | .isthmus_time = $isthmus
    | .jovian_time = $jovian' \
-  config/local/rollup.json > /tmp/rollup.json \
-  && mv /tmp/rollup.json config/local/rollup.json
+  "$DEPLOYMENT_CONFIG_PATH/rollup.json" > /tmp/rollup.json \
+  && mv /tmp/rollup.json "$DEPLOYMENT_CONFIG_PATH/rollup.json"
 ```
 
 Update `scripts/chain-start.sh` so `op-geth` gets the same fork times through overrides:
@@ -254,7 +255,7 @@ PY
 Confirm both sides match:
 
 ```bash
-jq '{fjord_time, granite_time, holocene_time, isthmus_time, jovian_time}' config/local/rollup.json
+jq '{fjord_time, granite_time, holocene_time, isthmus_time, jovian_time}' "$DEPLOYMENT_CONFIG_PATH/rollup.json"
 rg -- '--override\.(fjord|granite|holocene|isthmus|jovian)' scripts/chain-start.sh
 ```
 
@@ -348,6 +349,6 @@ This verifies:
 - `chain-start.sh`, `chain-setup.sh`, and `run-anvil.sh` should use `--block-time $L1_BLOCK_TIME`, not `--block-time 1`.
 - Do not stop anvil between `chain-setup.sh` and `chain-start.sh`; otherwise the L1 genesis/hash context changes.
 - If anvil is restarted from scratch, rerun `chain-setup.sh local`.
-- `op-node` reads `config/local/rollup.json` on startup.
+- `op-node` reads `$DEPLOYMENT_CONFIG_PATH/rollup.json` on startup.
 - `op-geth` does not reread `genesis.json` on every startup; this runbook uses `--override.*` flags for fork times instead.
 - For CGT chains, bridge gas token with `depositERC20Transaction`; ordinary ETH deposits do not fund native L2 gas.

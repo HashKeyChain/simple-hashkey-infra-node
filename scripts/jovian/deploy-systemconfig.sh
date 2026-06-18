@@ -9,6 +9,7 @@ set -euo pipefail
 #
 # Environment variables:
 #   SYSTEM_CONFIG_DEPLOY_PRIVATE_KEY defaults to $GS_ADMIN_PRIVATE_KEY
+#   CONTRACTS_UPGRADE_REF            defaults to cgt-jovian/contracts-v2.0.0-beta.3
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
 BASE_PATH=$(cd "$SCRIPT_DIR/../.." && pwd)
@@ -16,7 +17,7 @@ cd "$BASE_PATH"
 
 source .envrc
 
-CONTRACTS_REF="${1:-cgt-jovian/contracts-v2.0.0-beta.2}"
+CONTRACTS_REF="${1:-${CONTRACTS_UPGRADE_REF:-cgt-jovian/contracts-v2.0.0-beta.3}}"
 SYSTEM_CONFIG_DEPLOY_PRIVATE_KEY="${SYSTEM_CONFIG_DEPLOY_PRIVATE_KEY:-$GS_ADMIN_PRIVATE_KEY}"
 DEPLOY_SIGNER=$(cast wallet address --private-key "$SYSTEM_CONFIG_DEPLOY_PRIVATE_KEY")
 
@@ -43,12 +44,15 @@ forge install --no-commit >/dev/null 2>&1 || true
 forge build --silent
 
 echo "== deploying SystemConfig implementation =="
-DEPLOY_RESULT=$(forge create \
-  --broadcast \
+if ! DEPLOY_RESULT=$(forge create \
   --json \
   --rpc-url "$L1_RPC_URL" \
   --private-key "$SYSTEM_CONFIG_DEPLOY_PRIVATE_KEY" \
-  src/L1/SystemConfig.sol:SystemConfig 2>&1)
+  src/L1/SystemConfig.sol:SystemConfig 2>&1); then
+  echo "ERROR: forge create failed"
+  echo "$DEPLOY_RESULT"
+  exit 1
+fi
 
 DEPLOY_JSON=$(echo "$DEPLOY_RESULT" | awk '/^{/,/^}/')
 NEW_SYSTEM_CONFIG=$(echo "$DEPLOY_JSON" | jq -r '.deployedTo // empty')

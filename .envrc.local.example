@@ -89,6 +89,9 @@ export OP_DEPLOYER_REF=v1.9.5
 # contracts-bedrock version
 export OP_CONTRACTS_REF=op-contracts/v2.0.0-beta.2
 
+# Contracts branch/ref used for contract upgrades
+export CONTRACTS_UPGRADE_REF=cgt-jovian/contracts-v2.0.0-beta.3
+
 # Go toolchain:
 #  - op-node(optimism monorepo) go.mod requires go 1.21, but go 1.23+
 #    is incompatible with fjl/memsize v0.0.2 (link: invalid reference to runtime.stopTheWorld),

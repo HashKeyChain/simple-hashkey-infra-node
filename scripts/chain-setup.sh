@@ -44,11 +44,10 @@ if [ "$CHAIN_ENV" != "local" ] && [ "$CHAIN_ENV" != "server" ]; then
   exit 1
 fi
 
-# local 时：用本机 anvil，且生成文件放到 config/local（不放到 getting-started）
+# local 时：用本机 anvil；生成文件目录仍按 .envrc 的 DEPLOYMENT_CONTEXT。
 if [ "$CHAIN_ENV" = "local" ]; then
   export L1_RPC_URL="http://localhost:8545"
-  export DEPLOYMENT_CONTEXT=local
-  export DEPLOYMENT_CONFIG_PATH="$BASE_PATH/config/local"
+  export DEPLOYMENT_CONFIG_PATH="$BASE_PATH/config/$DEPLOYMENT_CONTEXT"
 fi
 
 echo "=== Chain Setup (genesis.json + rollup.json) ==="
