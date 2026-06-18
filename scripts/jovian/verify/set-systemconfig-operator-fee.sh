@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Set SystemConfig operator fee params on an external/private L1.
+# Set SystemConfig operator fee params on an external/remote L1.
 # Fill scripts/jovian/verify/verify.env before running.
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)

@@ -87,7 +87,7 @@ export CANNON_REF=v1.9.5
 export OP_DEPLOYER_REF=v1.9.5
 
 # contracts-bedrock version
-export OP_CONTRACTS_REF=op-contracts/v2.0.0-beta.2
+export OP_CONTRACTS_REF=op-contracts/v2.0.0-beta.3
 
 # Contracts branch/ref used for contract upgrades
 export CONTRACTS_UPGRADE_REF=cgt-jovian/contracts-v2.0.0-beta.3
@@ -109,7 +109,7 @@ export GOTOOLCHAIN=go1.22.12+auto
 export IMPL_SALT=$(openssl rand -hex 32)
 
 # Name for the deployed network
-export DEPLOYMENT_CONTEXT=local
+export DEPLOYMENT_CONTEXT=local-mainnet
 
 # Optional Tenderly details for simulation link during deployment
 export TENDERLY_PROJECT=
@@ -150,4 +150,4 @@ export USE_CUSTOM_GAS_TOKEN=true
 export CUSTOM_GAS_TOKEN_ADDRESS=
 
 # Choice to use L2OutputOracle or FaultDisputeGame, false: L2OutputOracle, true: FaultDisputeGame. Field: useFaultProofs
-export USE_FAULT_PROOFS=false
+export USE_FAULT_PROOFS=true

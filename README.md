@@ -1,6 +1,7 @@
 # Simple OP Stack Infra Node
 
-A simplified setup for running a local OP Stack network based on a local L1 (Anvil).
+A simplified setup for deploying and running an OP Stack L2 on either a local
+L1 (Anvil) or an existing remote/testnet L1 RPC.
 
 ## Required Tools
 
@@ -32,12 +33,20 @@ git submodule update --init --recursive
 ## Configuration
 
 ```shell
-# Copy the example config
-cp .envrc.example .envrc
+# Local Anvil L1 config
+cp .envrc.local.example .envrc
+
+# Or remote/testnet L1 config
+cp .envrc.testnet.example .envrc
 
 # Edit .envrc to configure versions for each component
 source .envrc
 ```
+
+## Runbooks
+
+- Local Anvil L1: `doc/local_cgt_jovian_upgrade_runbook.md`
+- Remote/testnet L1: `doc/remote_l1_cgt_jovian_deploy_runbook.md`
 
 ## Run Anvil (Local L1)
 
@@ -48,7 +57,11 @@ bash scripts/run-anvil.sh
 ## Deploy Contracts
 
 ```shell
-bash scripts/deploy-contracts.sh
+# Local Anvil L1
+bash scripts/chain-setup.sh local
+
+# Existing remote/testnet L1
+bash scripts/chain-setup.sh server
 ```
 
 ## Run op-geth

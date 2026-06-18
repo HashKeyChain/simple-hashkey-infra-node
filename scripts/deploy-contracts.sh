@@ -41,7 +41,11 @@ if [ "${USE_CUSTOM_GAS_TOKEN}" = "true" ]; then
 
   if [ -z "$CUSTOM_GAS_TOKEN_ADDRESS" ] || [ "$CUSTOM_GAS_TOKEN_ADDRESS" = "$ZERO_ADDRESS" ]; then
     echo "Deploying custom gas token..."
-    deploy_result=$(forge create --broadcast --json --rpc-url $L1_RPC_URL --private-key $DEPLOY_PRIVATE_KEY lib/openzeppelin-contracts/contracts/mocks/ERC20Mock.sol:ERC20Mock --constructor-args "hashkeyToken" "HSK" $DEPLOY_ADDRESS 10000000000000000000000)
+    if ! deploy_result=$(forge create --json --rpc-url $L1_RPC_URL --private-key $DEPLOY_PRIVATE_KEY lib/openzeppelin-contracts/contracts/mocks/ERC20Mock.sol:ERC20Mock --constructor-args "hashkeyToken" "HSK" $DEPLOY_ADDRESS 10000000000000000000000 2>&1); then
+      echo "ERROR: failed to deploy custom gas token"
+      echo "$deploy_result"
+      exit 1
+    fi
     CUSTOM_GAS_TOKEN_ADDRESS=$(echo $deploy_result | jq -r .deployedTo)
     echo "Custom gas token deployed at: $CUSTOM_GAS_TOKEN_ADDRESS"
 

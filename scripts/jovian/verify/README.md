@@ -1,6 +1,6 @@
 # Fork Verification Scripts
 
-This folder contains simple post-fork verification scripts for external/private networks.
+This folder contains simple post-fork verification scripts for external/remote networks.
 
 Each fork verification script sends one zero-value L2 transaction from `L2_VERIFY_PRIVATE_KEY` to itself and checks the fork-specific state.
 

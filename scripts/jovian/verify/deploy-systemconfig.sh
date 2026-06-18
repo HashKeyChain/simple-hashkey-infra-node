@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Deploy a standalone L1 SystemConfig implementation for external/private networks.
+# Deploy a standalone L1 SystemConfig implementation for external/remote networks.
 # Fill scripts/jovian/verify/verify.env before running.
 # This script does not upgrade any proxy.
 
