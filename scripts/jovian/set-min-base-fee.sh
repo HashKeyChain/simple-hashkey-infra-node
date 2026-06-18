@@ -29,7 +29,7 @@ to_dec() {
   if [[ "$value" == 0x* ]]; then
     cast to-dec "$value"
   else
-    echo "$value"
+    echo "${value%% *}"
   fi
 }
 
