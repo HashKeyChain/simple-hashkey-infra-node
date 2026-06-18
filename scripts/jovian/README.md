@@ -65,9 +65,47 @@ jq \
   "$DEPLOYMENT_CONFIG_PATH/rollup.json" > /tmp/rollup.json \
   && mv /tmp/rollup.json "$DEPLOYMENT_CONFIG_PATH/rollup.json"
 
-# 5. 确保 op-geth 启动参数里使用同样的 fork override 时间
-rg -- '--override\.(fjord|granite|holocene|isthmus|jovian)' scripts/chain-start.sh \
-  || echo "WARN: configure --override.* in scripts/chain-start.sh before restart"
+# 5. 从 rollup.json 读取 fork 时间，并写入 op-geth 启动参数
+python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+rollup_path = Path(os.environ["DEPLOYMENT_CONFIG_PATH"]) / "rollup.json"
+chain_start = Path("scripts/chain-start.sh")
+
+rollup = json.loads(rollup_path.read_text())
+forks = {
+    "fjord": rollup["fjord_time"],
+    "granite": rollup["granite_time"],
+    "holocene": rollup["holocene_time"],
+    "isthmus": rollup["isthmus_time"],
+    "jovian": rollup["jovian_time"],
+}
+
+lines = []
+inserted = False
+for line in chain_start.read_text().splitlines():
+    if "--override.fjord=" in line or "--override.granite=" in line:
+        continue
+    lines.append(line)
+    if line.startswith('OP_GETH_FLAGS="--verbosity=3 '):
+        lines.append(f'OP_GETH_FLAGS="$OP_GETH_FLAGS --override.fjord={forks["fjord"]}"')
+        lines.append(
+            'OP_GETH_FLAGS="$OP_GETH_FLAGS '
+            f'--override.granite={forks["granite"]} '
+            f'--override.holocene={forks["holocene"]} '
+            f'--override.isthmus={forks["isthmus"]} '
+            f'--override.jovian={forks["jovian"]}"'
+        )
+        inserted = True
+
+if not inserted:
+    raise SystemExit("Could not find OP_GETH_FLAGS line in scripts/chain-start.sh")
+
+chain_start.write_text("\n".join(lines) + "\n")
+print("Updated scripts/chain-start.sh with fork overrides:", forks)
+PY
 
 # 6. 重启 L2 服务
 bash scripts/chain-start.sh local
