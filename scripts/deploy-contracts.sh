@@ -19,6 +19,8 @@ cd $CONTRACTS_BEDROCK_PATH
 # Remove lib dirs that often cause "unable to rmdir ... Directory not empty" on checkout;
 # forge install below will reinstall the correct versions for this ref.
 git checkout $OP_CONTRACTS_REF
+echo "Cleaning Forge cache/artifacts for $OP_CONTRACTS_REF..."
+forge clean
 
 if [ "$OP_CONTRACTS_REF" = "op-contracts/v2.0.0-beta.3" ]; then
   DEPLOY_SCRIPT="scripts/deploy/Deploy.s.sol:Deploy"
@@ -88,21 +90,42 @@ echo "Installing Forge dependencies (may take 2-5 min, git may have little outpu
 forge install
 echo "Dependencies OK. Building..."
 forge build --silent
-# --slow removed for faster batch deployment
 CURRENT_MAX_FEE_PER_GAS=$(cast to-dec "$(cast rpc eth_gasPrice --rpc-url "$L1_RPC_URL" | tr -d '"')")
 CURRENT_PRIORITY_GAS_PRICE=$(cast to-dec "$(cast rpc eth_maxPriorityFeePerGas --rpc-url "$L1_RPC_URL" | tr -d '"')")
-DEPLOY_MAX_FEE_PER_GAS=$((CURRENT_MAX_FEE_PER_GAS * 2))
-DEPLOY_PRIORITY_GAS_PRICE=$((CURRENT_PRIORITY_GAS_PRICE * 2))
+DEPLOY_GAS_MULTIPLIER="${DEPLOY_GAS_MULTIPLIER:-2}"
+DEPLOY_PRIORITY_GAS_MULTIPLIER="${DEPLOY_PRIORITY_GAS_MULTIPLIER:-2}"
+DEPLOY_MAX_FEE_PER_GAS="${DEPLOY_MAX_FEE_PER_GAS:-$((CURRENT_MAX_FEE_PER_GAS * DEPLOY_GAS_MULTIPLIER))}"
+DEPLOY_PRIORITY_GAS_PRICE="${DEPLOY_PRIORITY_GAS_PRICE:-$((CURRENT_PRIORITY_GAS_PRICE * DEPLOY_PRIORITY_GAS_MULTIPLIER))}"
+
+if echo "$L1_RPC_URL" | grep -qE 'localhost|127\.0\.0\.1'; then
+  DEFAULT_DEPLOY_BATCH_SIZE=10
+  DEFAULT_DEPLOY_SLOW=false
+else
+  DEFAULT_DEPLOY_BATCH_SIZE=1
+  DEFAULT_DEPLOY_SLOW=true
+fi
+DEPLOY_BATCH_SIZE="${DEPLOY_BATCH_SIZE:-$DEFAULT_DEPLOY_BATCH_SIZE}"
+DEPLOY_SLOW="${DEPLOY_SLOW:-$DEFAULT_DEPLOY_SLOW}"
+
 echo "Using deployment gas fees:"
-echo "  maxFeePerGas:         $DEPLOY_MAX_FEE_PER_GAS wei (2x current eth_gasPrice: $CURRENT_MAX_FEE_PER_GAS)"
-echo "  maxPriorityFeePerGas: $DEPLOY_PRIORITY_GAS_PRICE wei (2x current eth_maxPriorityFeePerGas: $CURRENT_PRIORITY_GAS_PRICE)"
-forge script $DEPLOY_SCRIPT \
-  --private-key $GS_ADMIN_PRIVATE_KEY \
-  --broadcast \
-  --rpc-url $L1_RPC_URL \
-  --batch-size 10 \
-  --with-gas-price "$DEPLOY_MAX_FEE_PER_GAS" \
+echo "  maxFeePerGas:         $DEPLOY_MAX_FEE_PER_GAS wei"
+echo "  maxPriorityFeePerGas: $DEPLOY_PRIORITY_GAS_PRICE wei"
+echo "  batchSize:            $DEPLOY_BATCH_SIZE"
+echo "  slow:                 $DEPLOY_SLOW"
+
+FORGE_SCRIPT_ARGS=(
+  "$DEPLOY_SCRIPT"
+  --private-key "$GS_ADMIN_PRIVATE_KEY"
+  --broadcast
+  --rpc-url "$L1_RPC_URL"
+  --batch-size "$DEPLOY_BATCH_SIZE"
+  --with-gas-price "$DEPLOY_MAX_FEE_PER_GAS"
   --priority-gas-price "$DEPLOY_PRIORITY_GAS_PRICE"
+)
+if [ "$DEPLOY_SLOW" = "true" ]; then
+  FORGE_SCRIPT_ARGS+=(--slow)
+fi
+forge script "${FORGE_SCRIPT_ARGS[@]}"
 
 # Create l2chain genesis state and load in file.
 export CONTRACT_ADDRESSES_PATH=$DEPLOYMENT_OUTFILE

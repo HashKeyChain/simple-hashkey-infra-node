@@ -158,7 +158,46 @@ addr=$(jq -r '.DisputeGameFactoryProxy' "$DEPLOYMENT_CONFIG_PATH/artifact.json")
 echo "DisputeGameFactoryProxy $addr code_len=$(cast code "$addr" --rpc-url "$L1_RPC_URL" | wc -c | tr -d ' ')"
 ```
 
-## 5. Start L2 Services
+## 5. Patch `rollup.json` Compatibility
+
+Refresh the L1 genesis hash from the configured remote L1 RPC. This should already match when the deployment artifacts are generated from the same L1, but this check prevents starting `op-node` with a stale or mismatched L1 block hash:
+
+```bash
+L1_GENESIS_NUMBER=$(jq -r '.genesis.l1.number' "$DEPLOYMENT_CONFIG_PATH/rollup.json")
+L1_GENESIS_HASH=$(cast block "$L1_GENESIS_NUMBER" --rpc-url "$L1_RPC_URL" --json | jq -r '.hash')
+
+jq --arg hash "$L1_GENESIS_HASH" \
+  '.genesis.l1.hash = $hash' \
+  "$DEPLOYMENT_CONFIG_PATH/rollup.json" > /tmp/rollup.json \
+  && mv /tmp/rollup.json "$DEPLOYMENT_CONFIG_PATH/rollup.json"
+```
+
+Remove fields that the runtime `cgt-jovian/v1.16.5` op-node does not understand:
+
+```bash
+jq 'del(.da_challenge_contract_address)' \
+  "$DEPLOYMENT_CONFIG_PATH/rollup.json" > /tmp/rollup.json \
+  && mv /tmp/rollup.json "$DEPLOYMENT_CONFIG_PATH/rollup.json"
+```
+
+Ensure `chain_op_config` exists:
+
+```bash
+jq '.chain_op_config = {
+  "eip1559Elasticity": 6,
+  "eip1559Denominator": 50,
+  "eip1559DenominatorCanyon": 250
+}' "$DEPLOYMENT_CONFIG_PATH/rollup.json" > /tmp/rollup.json \
+  && mv /tmp/rollup.json "$DEPLOYMENT_CONFIG_PATH/rollup.json"
+```
+
+Check:
+
+```bash
+jq '{genesis, chain_op_config}' "$DEPLOYMENT_CONFIG_PATH/rollup.json"
+```
+
+## 6. Start L2 Services
 
 Start L2 services in server mode:
 
@@ -182,7 +221,7 @@ cast block latest --rpc-url "$L2_RPC_URL"
 cast rpc optimism_syncStatus --rpc-url "$OP_NODE_RPC_URL" | jq
 ```
 
-## 6. Optional: Upgrade SystemConfig To Jovian Branch
+## 7. Optional: Upgrade SystemConfig To Jovian Branch
 
 If the initial deploy contracts ref does not already contain the target SystemConfig implementation, deploy and upgrade it:
 
@@ -204,7 +243,7 @@ bash scripts/chain-stop.sh
 
 Do not stop the remote L1.
 
-## 7. Configure Fork Times And Restart L2
+## 8. Configure Fork Times And Restart L2
 
 Use remote L1 time as the source for future fork activation times:
 
@@ -285,7 +324,7 @@ Restart L2:
 bash scripts/chain-start.sh server
 ```
 
-## 8. Verify Jovian Parameters
+## 9. Verify Jovian Parameters
 
 Query current L1 and L2 params:
 
@@ -317,7 +356,7 @@ bash scripts/jovian/query-systemconfig-params.sh
 
 L1 config transactions are not reflected on L2 immediately. Wait for `op-node` to derive the remote L1 block containing the config update transaction, then rerun the query/verify script.
 
-## 9. Stop Services
+## 10. Stop Services
 
 Stop local L2 services:
 

@@ -18,7 +18,7 @@ source "$SCRIPT_DIR/verify.env"
 L1_RPC="${L1_RPC:?missing L1_RPC in verify.env}"
 SYSTEM_CONFIG_PRIVATE_KEY="${SYSTEM_CONFIG_PRIVATE_KEY:?missing SYSTEM_CONFIG_PRIVATE_KEY in verify.env}"
 SYSTEM_CONFIG_CONTRACTS_REPO="${SYSTEM_CONFIG_CONTRACTS_REPO:?missing SYSTEM_CONFIG_CONTRACTS_REPO in verify.env}"
-SYSTEM_CONFIG_CONTRACTS_REF="${SYSTEM_CONFIG_CONTRACTS_REF:-cgt-jovian/contracts-v2.0.0-beta.2}"
+SYSTEM_CONFIG_CONTRACTS_REF="${SYSTEM_CONFIG_CONTRACTS_REF:-cgt-jovian/contracts-v2.0.0-beta.3}"
 SYSTEM_CONFIG_VERIFIER="${SYSTEM_CONFIG_VERIFIER:-blockscout}"
 SYSTEM_CONFIG_VERIFIER_URL="${SYSTEM_CONFIG_VERIFIER_URL:-}"
 SYSTEM_CONFIG_ETHERSCAN_API_KEY="${SYSTEM_CONFIG_ETHERSCAN_API_KEY:-}"
@@ -32,6 +32,8 @@ fi
 echo "== checking out contracts ref =="
 cd "$SYSTEM_CONFIG_CONTRACTS_REPO"
 git checkout "$SYSTEM_CONFIG_CONTRACTS_REF"
+SYSTEM_CONFIG_CONTRACTS_COMMIT=$(git rev-parse HEAD)
+SYSTEM_CONFIG_CONTRACTS_COMMIT_SHORT=$(git rev-parse --short HEAD)
 
 if [ -d "$SYSTEM_CONFIG_CONTRACTS_REPO/packages/contracts-bedrock" ]; then
   SYSTEM_CONFIG_CONTRACTS_PATH="$SYSTEM_CONFIG_CONTRACTS_REPO/packages/contracts-bedrock"
@@ -51,6 +53,7 @@ echo "============================================"
 echo "  Deploy SystemConfig Implementation"
 echo "============================================"
 echo "contracts ref: $SYSTEM_CONFIG_CONTRACTS_REF"
+echo "contracts commit: $SYSTEM_CONFIG_CONTRACTS_COMMIT_SHORT ($SYSTEM_CONFIG_CONTRACTS_COMMIT)"
 echo "contracts dir: $SYSTEM_CONFIG_CONTRACTS_PATH"
 echo "L1 RPC:        $L1_RPC"
 echo "deploy signer: $DEPLOY_SIGNER"
@@ -63,12 +66,28 @@ forge install --no-commit >/dev/null 2>&1 || true
 forge build --silent
 
 echo "== deploying SystemConfig implementation =="
-DEPLOY_RESULT=$(forge create \
-  --broadcast \
-  --json \
-  --rpc-url "$L1_RPC" \
-  --private-key "$SYSTEM_CONFIG_PRIVATE_KEY" \
-  src/L1/SystemConfig.sol:SystemConfig 2>&1)
+CREATE_ARGS=(
+  create
+  --json
+  --rpc-url "$L1_RPC"
+  --private-key "$SYSTEM_CONFIG_PRIVATE_KEY"
+)
+
+if forge create --help | grep -Eq '^[[:space:]]+--broadcast([[:space:]]|$)'; then
+  CREATE_ARGS+=(--broadcast)
+fi
+
+CREATE_ARGS+=(src/L1/SystemConfig.sol:SystemConfig)
+
+set +e
+DEPLOY_RESULT=$(forge "${CREATE_ARGS[@]}" 2>&1)
+DEPLOY_EXIT_CODE=$?
+set -e
+if [ "$DEPLOY_EXIT_CODE" -ne 0 ]; then
+  echo "ERROR: forge create failed"
+  echo "$DEPLOY_RESULT"
+  exit "$DEPLOY_EXIT_CODE"
+fi
 
 DEPLOY_JSON=$(echo "$DEPLOY_RESULT" | awk '/^{/,/^}/')
 NEW_SYSTEM_CONFIG=$(echo "$DEPLOY_JSON" | jq -r '.deployedTo // empty')
