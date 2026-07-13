@@ -4,11 +4,11 @@
 # 不启动 L2 节点，仅完成配置生成。
 #
 # 用法:
-#   bash scripts/chain-setup.sh [local|server]
+#   bash scripts/chain-setup.sh [local|remote]
 #
 # 参数:
 #   local  - 本地环境：若 L1 未运行则自动启动 anvil，再部署合约并生成配置
-#   server - 服务器环境：使用 .envrc 中的 L1_RPC_URL，直接部署并生成配置
+#   remote - 远端环境：使用 .envrc 中的 L1_RPC_URL，直接部署并生成配置
 #
 # 若不传参，则根据 L1_RPC_URL 自动判断（含 localhost/127.0.0.1 视为 local）。
 #
@@ -27,20 +27,20 @@ cd "$BASE_PATH"
 
 source .envrc
 
-# 解析运行环境：local | server
+# 解析运行环境：local | remote
 CHAIN_ENV="${1:-}"
 
 if [ -z "$CHAIN_ENV" ]; then
   if echo "$L1_RPC_URL" | grep -qE 'localhost|127\.0\.0\.1'; then
     CHAIN_ENV=local
   else
-    CHAIN_ENV=server
+    CHAIN_ENV=remote
   fi
   echo "Auto-detected CHAIN_ENV=$CHAIN_ENV (from L1_RPC_URL)"
 fi
 
-if [ "$CHAIN_ENV" != "local" ] && [ "$CHAIN_ENV" != "server" ]; then
-  echo "Usage: bash scripts/chain-setup.sh [local|server]"
+if [ "$CHAIN_ENV" != "local" ] && [ "$CHAIN_ENV" != "remote" ]; then
+  echo "Usage: bash scripts/chain-setup.sh [local|remote]"
   exit 1
 fi
 
@@ -87,7 +87,7 @@ if [ "$CHAIN_ENV" = "local" ]; then
     echo "L1 already running at $L1_RPC_URL"
   fi
 else
-  # server: 直接检查 L1 可用
+  # remote: 直接检查 L1 可用
   echo "Checking L1 RPC..."
   wait_l1
 fi
@@ -103,11 +103,24 @@ if [ "$CHAIN_ENV" = "local" ]; then
     cast rpc anvil_setBalance "$addr" 0x3635c9adc5dea00000 --rpc-url "$L1_RPC_URL" >/dev/null 2>&1 \
       && echo "  funded $addr" || echo "  WARN: fund $addr failed"
   done
+
+  # 本地 anvil 默认不预置 Multicall3，而 op-challenger 依赖它做批量读，缺失会报
+  # "failed to fetch batch: Resource not found"。在部署合约前用官方 keyless 预签名交易
+  # 部署到 canonical 地址，使后续所有块都可用。（幂等）
+  echo "Deploying Multicall3..."
+  bash "$SCRIPT_DIR/deploy-multicall3.sh"
 fi
 
 echo ""
 echo "Running contract deployment and generating genesis/rollup config..."
 bash "$SCRIPT_DIR/deploy-contracts.sh"
+
+# 把部署生成的 rollup.json 修正为运行时 op-node(cgt-jovian/v1.16.5) 可用的形态：
+# 删除 da_challenge_contract_address、补齐 chain_op_config；local 额外刷新 genesis.l1.hash。
+# 这样 setup 完可直接 chain-start，无需手动 patch。（幂等，可重复执行）
+echo ""
+echo "Patching rollup.json compatibility..."
+bash "$SCRIPT_DIR/patch-rollup-config.sh" "$CHAIN_ENV"
 
 # 若本次脚本启动了 anvil，可选保留或关闭（保留便于后续 chain-start 使用）
 if [ -n "$ANVIL_PID" ]; then

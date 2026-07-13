@@ -69,20 +69,36 @@ if [ "$(basename "$DEPLOY_CONFIG_PATH")" != "getting-started.json" ]; then
 fi
 
 # Add custom gas token and fault proofs config to deploy config
+# respectedGameType：0=CANNON(permissionless)，1=PERMISSIONED_CANNON(permissioned)。
+# 仅 fault proofs 生效；缺省 1（新链按官方生产实践以 permissioned 起步）。
+# 在此脚本层注入，避免改动 optimism 子模块（子模块在部署时会被 git checkout 重置）。
+RESPECTED_GAME_TYPE="${RESPECTED_GAME_TYPE:-1}"
+# faultGameGenesisOutputRoot：AnchorStateRegistry 的初始 anchor（第一个 dispute game 的博弈起点）。
+# 缺省用官方 op-deployer 同款非零占位 0xdead…000：只要非零就能过 game 初始化的
+# AnchorRootNotFound 检查，proposer 首次即可建 game，无需事后种 anchor。
+# 第一个诚实 game 解决后，anchor 会经 tryUpdateAnchorState 前移为真实 root，占位退役。
+# 想用真实创世 root，可导出 FAULT_GAME_GENESIS_OUTPUT_ROOT 覆盖（或改回 0 走脚本种 anchor）。
+FAULT_GAME_GENESIS_OUTPUT_ROOT="${FAULT_GAME_GENESIS_OUTPUT_ROOT:-0xdead000000000000000000000000000000000000000000000000000000000000}"
 echo "Adding custom gas token and fault proofs config..."
 jq --arg use_cgt "$USE_CUSTOM_GAS_TOKEN" \
    --arg cgt_addr "$CUSTOM_GAS_TOKEN_ADDRESS" \
    --arg use_fp "$USE_FAULT_PROOFS" \
+   --argjson rgt "$RESPECTED_GAME_TYPE" \
+   --arg genesis_root "$FAULT_GAME_GENESIS_OUTPUT_ROOT" \
    '. + {
      "useCustomGasToken": ($use_cgt == "true"),
      "customGasTokenAddress": $cgt_addr,
-     "useFaultProofs": ($use_fp == "true")
+     "useFaultProofs": ($use_fp == "true"),
+     "respectedGameType": $rgt,
+     "faultGameGenesisOutputRoot": $genesis_root
    }' $DEPLOY_CONFIG_PATH > tmp.json && mv tmp.json $DEPLOY_CONFIG_PATH
 
 echo "Deploy config updated:"
 echo "  - Custom gas token: $USE_CUSTOM_GAS_TOKEN"
 echo "  - Custom gas token address: $CUSTOM_GAS_TOKEN_ADDRESS"
 echo "  - Fault proofs: $USE_FAULT_PROOFS"
+echo "  - Respected game type: $RESPECTED_GAME_TYPE ($([ "$RESPECTED_GAME_TYPE" = "1" ] && echo permissioned || echo permissionless))"
+echo "  - Fault game genesis output root: $FAULT_GAME_GENESIS_OUTPUT_ROOT"
 
 # Build and deploy contracts.
 # forge install 内部用 git clone/submodule，git 经常长时间无输出，属正常现象

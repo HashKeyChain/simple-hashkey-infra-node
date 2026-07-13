@@ -7,7 +7,7 @@ It is different from the local Anvil runbook:
 - Do not start or stop Anvil.
 - Do not use `anvil_setBalance`.
 - All deploy/operator accounts must already have enough native L1 token on the remote L1.
-- Use `chain-setup.sh server`, not `chain-setup.sh local`.
+- Use `chain-setup.sh remote`, not `chain-setup.sh local`.
 
 ## 1. Prepare Environment
 
@@ -115,10 +115,10 @@ If `USE_FAULT_PROOFS=true` and you plan to run challenger, also build/copy `op-c
 
 ## 4. Deploy L1 Contracts And Generate L2 Config
 
-Run setup in server mode:
+Run setup in remote mode:
 
 ```bash
-bash scripts/chain-setup.sh server
+bash scripts/chain-setup.sh remote
 ```
 
 This will:
@@ -199,10 +199,10 @@ jq '{genesis, chain_op_config}' "$DEPLOYMENT_CONFIG_PATH/rollup.json"
 
 ## 6. Start L2 Services
 
-Start L2 services in server mode:
+Start L2 services in remote mode:
 
 ```bash
-bash scripts/chain-start.sh server
+bash scripts/chain-start.sh remote
 ```
 
 This does not start or stop the remote L1. It only starts local L2 services using the generated config.
@@ -279,10 +279,11 @@ Write the same fork times into `scripts/chain-start.sh` for `op-geth`:
 python3 - <<'PY'
 import json
 import os
+import re
 from pathlib import Path
 
 rollup_path = Path(os.environ["DEPLOYMENT_CONFIG_PATH"]) / "rollup.json"
-chain_start = Path("scripts/chain-start.sh")
+envrc = Path(".envrc")
 
 rollup = json.loads(rollup_path.read_text())
 forks = {
@@ -293,35 +294,25 @@ forks = {
     "jovian": rollup["jovian_time"],
 }
 
-lines = []
-inserted = False
-for line in chain_start.read_text().splitlines():
-    if "--override.fjord=" in line or "--override.granite=" in line:
-        continue
-    lines.append(line)
-    if line.startswith('OP_GETH_FLAGS="--verbosity=3 '):
-        lines.append(f'OP_GETH_FLAGS="$OP_GETH_FLAGS --override.fjord={forks["fjord"]}"')
-        lines.append(
-            'OP_GETH_FLAGS="$OP_GETH_FLAGS '
-            f'--override.granite={forks["granite"]} '
-            f'--override.holocene={forks["holocene"]} '
-            f'--override.isthmus={forks["isthmus"]} '
-            f'--override.jovian={forks["jovian"]}"'
-        )
-        inserted = True
+override = " ".join(f"--override.{name}={ts}" for name, ts in forks.items())
+new_line = f'export OP_GETH_OVERRIDE_FLAGS="{override}"'
 
-if not inserted:
-    raise SystemExit("Could not find OP_GETH_FLAGS line in scripts/chain-start.sh")
+text = envrc.read_text()
+pattern = re.compile(r'^export OP_GETH_OVERRIDE_FLAGS=.*$', re.MULTILINE)
+if pattern.search(text):
+    text = pattern.sub(new_line, text)
+else:
+    text = text.rstrip("\n") + "\n" + new_line + "\n"
 
-chain_start.write_text("\n".join(lines) + "\n")
-print("Updated scripts/chain-start.sh with fork overrides:", forks)
+envrc.write_text(text)
+print("Updated .envrc OP_GETH_OVERRIDE_FLAGS:", override)
 PY
 ```
 
 Restart L2:
 
 ```bash
-bash scripts/chain-start.sh server
+bash scripts/chain-start.sh remote
 ```
 
 ## 9. Verify Jovian Parameters
@@ -368,7 +359,7 @@ This does not stop the remote L1.
 
 ## Important Notes
 
-- `chain-setup.sh server` deploys to the configured remote L1. Double-check `.envrc` before running.
+- `chain-setup.sh remote` deploys to the configured remote L1. Double-check `.envrc` before running.
 - Remote L1 accounts must be funded before setup. The scripts cannot use `anvil_setBalance`.
 - Keep `$DEPLOYMENT_CONFIG_PATH` artifacts for the network. They are required by startup and Jovian scripts.
 - If `CUSTOM_GAS_TOKEN_ADDRESS` is empty, setup deploys a new token on the remote L1 and writes the address back to `.envrc`.

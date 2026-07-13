@@ -65,14 +65,17 @@ jq \
   "$DEPLOYMENT_CONFIG_PATH/rollup.json" > /tmp/rollup.json \
   && mv /tmp/rollup.json "$DEPLOYMENT_CONFIG_PATH/rollup.json"
 
-# 5. 从 rollup.json 读取 fork 时间，并写入 op-geth 启动参数
+# 5. 从 rollup.json 读取 fork 时间，写入 .envrc 的 OP_GETH_OVERRIDE_FLAGS。
+#    op-geth 的启动参数已收敛到 scripts/run-op-geth.sh（唯一真源），它会 source .envrc
+#    并把 OP_GETH_OVERRIDE_FLAGS 追加到 op-geth flags 末尾；chain-start.sh 编排调用它即可生效。
 python3 - <<'PY'
 import json
 import os
+import re
 from pathlib import Path
 
 rollup_path = Path(os.environ["DEPLOYMENT_CONFIG_PATH"]) / "rollup.json"
-chain_start = Path("scripts/chain-start.sh")
+envrc = Path(".envrc")
 
 rollup = json.loads(rollup_path.read_text())
 forks = {
@@ -83,28 +86,18 @@ forks = {
     "jovian": rollup["jovian_time"],
 }
 
-lines = []
-inserted = False
-for line in chain_start.read_text().splitlines():
-    if "--override.fjord=" in line or "--override.granite=" in line:
-        continue
-    lines.append(line)
-    if line.startswith('OP_GETH_FLAGS="--verbosity=3 '):
-        lines.append(f'OP_GETH_FLAGS="$OP_GETH_FLAGS --override.fjord={forks["fjord"]}"')
-        lines.append(
-            'OP_GETH_FLAGS="$OP_GETH_FLAGS '
-            f'--override.granite={forks["granite"]} '
-            f'--override.holocene={forks["holocene"]} '
-            f'--override.isthmus={forks["isthmus"]} '
-            f'--override.jovian={forks["jovian"]}"'
-        )
-        inserted = True
+override = " ".join(f"--override.{name}={ts}" for name, ts in forks.items())
+new_line = f'export OP_GETH_OVERRIDE_FLAGS="{override}"'
 
-if not inserted:
-    raise SystemExit("Could not find OP_GETH_FLAGS line in scripts/chain-start.sh")
+text = envrc.read_text()
+pattern = re.compile(r'^export OP_GETH_OVERRIDE_FLAGS=.*$', re.MULTILINE)
+if pattern.search(text):
+    text = pattern.sub(new_line, text)
+else:
+    text = text.rstrip("\n") + "\n" + new_line + "\n"
 
-chain_start.write_text("\n".join(lines) + "\n")
-print("Updated scripts/chain-start.sh with fork overrides:", forks)
+envrc.write_text(text)
+print("Updated .envrc OP_GETH_OVERRIDE_FLAGS:", override)
 PY
 
 # 6. 重启 L2 服务

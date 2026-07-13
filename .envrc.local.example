@@ -74,17 +74,17 @@ export OP_BATCHER_REF=op-batcher/v1.16.3
 # op-proposer version
 export OP_PROPOSER_REF=op-proposer/v1.10.0
 
-# op-challenger version
-export OP_CHALLENGER_REF=v1.9.5
+# op-challenger version: use cgt-jovian/v1.16.5 (same branch / Prague-aware op-geth
+# as op-node). A pre-Prague op-geth would miscompute L1 header hashes (EIP-7685
+# requestsHash) and break hash-based eth_call against a live L1.
+export OP_CHALLENGER_REF=cgt-jovian/v1.16.5
 
 # op-program version (for fault proofs)
-export OP_PROGRAM_REF=v1.9.5
+# Kept at beta.3 to stay compatible with the deployed MIPS / absolute prestate.
+export OP_PROGRAM_REF=op-contracts/v2.0.0-beta.3
 
 # cannon version (for fault proofs)
-export CANNON_REF=v1.9.5
-
-# op-deployer version
-export OP_DEPLOYER_REF=v1.9.5
+export CANNON_REF=op-contracts/v2.0.0-beta.3
 
 # contracts-bedrock version
 export OP_CONTRACTS_REF=op-contracts/v2.0.0-beta.3
@@ -151,3 +151,29 @@ export CUSTOM_GAS_TOKEN_ADDRESS=
 
 # Choice to use L2OutputOracle or FaultDisputeGame, false: L2OutputOracle, true: FaultDisputeGame. Field: useFaultProofs
 export USE_FAULT_PROOFS=true
+
+# Dispute game type (only used when USE_FAULT_PROOFS=true):
+#   0 = CANNON (permissionless, anyone can propose/challenge)
+#   1 = PERMISSIONED_CANNON (permissioned, only authorized proposer/challenger)
+# New chains start permissioned per official production practice: Portal.respectedGameType,
+# the proposer's --game-type and the anchor init script all follow this variable.
+export GAME_TYPE=1
+export RESPECTED_GAME_TYPE=$GAME_TYPE
+
+# ===== Hardfork activation times (single source of truth) =====
+# Configure once here. These FORK_*_TIME values are the single source of truth for
+# fork activation; both consumers derive from them:
+#   - rollup.json *_time: written by scripts/patch-rollup-config.sh (read by op-node)
+#   - op-geth --override.*: assembled at startup by scripts/run-op-geth.sh (read by op-geth)
+# Values are unix seconds; 0 means active at genesis; empty means the fork is not
+# started (rollup.json set to null, no op-geth override).
+#
+# A freshly set-up chain starts only from fjord: fjord=0 (active at genesis), the
+# other 4 forks left empty. To activate a new fork later: set the target timestamp
+# here, then run scripts/activate-fork.sh (auto stops the chain, syncs rollup.json,
+# restarts L2 with the new params). See scripts/jovian, doc/*upgrade_runbook.md.
+export FORK_FJORD_TIME=0
+export FORK_GRANITE_TIME=
+export FORK_HOLOCENE_TIME=
+export FORK_ISTHMUS_TIME=
+export FORK_JOVIAN_TIME=

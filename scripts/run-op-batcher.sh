@@ -1,6 +1,15 @@
 #!/bin/bash
+#
+# 纯组件启动器：仅负责用正确 flags 启动 op-batcher（本组件 flags 的唯一真源）。
+# 由 chain-start.sh 编排调用，也可单独运行用于调试/重启。
+#
+# 单独运行前提：op-node 已在 $OP_NODE_RPC_URL 提供 rollup RPC、L2 已出块。
+#
 
 source .envrc
+
+# 允许被 chain-start 编排层通过 _CALLER_* 覆盖；单独运行时回落到 .envrc。
+L1_RPC_URL="${_CALLER_L1_RPC_URL:-$L1_RPC_URL}"
 
 echo "Starting op-batcher ..."
 
@@ -16,4 +25,4 @@ flags="$base_flags $batcher_flags $txmgr_flags $misc_flags"
 
 echo "op-batcher ${flags}"
 
-op-batcher $flags
+exec op-batcher $flags

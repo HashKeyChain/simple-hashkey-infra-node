@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# 停止由 chain-start.sh 启动的所有服务（op-geth、op-node、op-batcher、op-proposer）。
+# 停止由 chain-start.sh 启动的所有服务（op-challenger、op-proposer、op-batcher、op-node、op-geth）。
 # 若为本地环境且 anvil 由本仓库脚本启动，可手动停止: docker stop anvil-chain
 #
 # 用法: bash scripts/chain-stop.sh
@@ -12,6 +12,7 @@ PID_DIR="${BASE_PATH}/data/pids"
 DATA_DIR="${BASE_PATH}/data"
 OP_GETH_DATA_PATH="${DATA_DIR}/op-geth"
 OP_NODE_SAFEDB_PATH="${DATA_DIR}/op-node/safedb"
+OP_CHALLENGER_DATA_PATH="${DATA_DIR}/op-challenger"
 OP_BATCHER_PORT="${OP_BATCHER_PORT:-9645}"
 OP_NODE_RPC_URL="${OP_NODE_RPC_URL:-http://localhost:9545}"
 OP_PROPOSER_PORT="${OP_PROPOSER_PORT:-8560}"
@@ -61,7 +62,7 @@ stop_matching_processes() {
 }
 
 # First stop the processes recorded by the latest chain-start.sh run.
-for name in op-proposer op-batcher op-node op-geth; do
+for name in op-challenger op-proposer op-batcher op-node op-geth; do
   pid_file="$PID_DIR/${name}.pid"
   if [ -f "$pid_file" ]; then
     pid=$(cat "$pid_file")
@@ -72,6 +73,7 @@ done
 
 # Then stop stale processes from older runs whose PID files may have been overwritten.
 # Match by this repository's datadir/safedb paths so Cursor helper processes are not killed.
+stop_matching_processes "op-challenger" "op-challenger " "--datadir=$OP_CHALLENGER_DATA_PATH"
 stop_matching_processes "op-proposer" "op-proposer " "--rollup-rpc=$OP_NODE_RPC_URL" "--rpc.port=8560"
 stop_matching_processes "op-batcher" "op-batcher " "--rollup-rpc=$OP_NODE_RPC_URL" "--rpc.port=$OP_BATCHER_PORT"
 stop_matching_processes "op-node" "op-node " "--safedb.path=$OP_NODE_SAFEDB_PATH"

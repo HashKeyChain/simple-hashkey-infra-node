@@ -86,9 +86,30 @@ This should:
 
 ## 4. Patch `rollup.json` Compatibility
 
-Refresh the L1 genesis hash from the currently running local Anvil chain. Use the L1 block number already recorded in `rollup.json`; this block hash changes every time the local L1 is rebuilt:
+> This step is now automated. `scripts/chain-setup.sh` calls
+> `scripts/patch-rollup-config.sh` right after deployment, so after Step 3 the
+> `rollup.json` is already patched and you can go straight to Step 5. The
+> commands below are kept for reference / manual re-run only.
+
+The automated patch does three things (all idempotent):
+
+1. **Refresh the L1 genesis hash** (local only). Uses the L1 block number already
+   recorded in `rollup.json`; this block hash changes every time the local L1 is
+   rebuilt. Skipped for `remote` because a real L1 already has the correct hash.
+2. **Remove `da_challenge_contract_address`**, which the runtime
+   `cgt-jovian/v1.16.5` op-node does not understand.
+3. **Ensure `chain_op_config` exists** with the EIP-1559 params below.
+
+To run it manually (e.g. after rebuilding anvil without re-running setup):
 
 ```bash
+bash scripts/patch-rollup-config.sh local
+```
+
+For reference, the equivalent raw commands are:
+
+```bash
+# 1) refresh genesis.l1.hash (local only)
 L1_GENESIS_NUMBER=$(jq -r '.genesis.l1.number' "$DEPLOYMENT_CONFIG_PATH/rollup.json")
 L1_GENESIS_HASH=$(cast block "$L1_GENESIS_NUMBER" --rpc-url http://localhost:8545 --json | jq -r '.hash')
 
@@ -96,19 +117,13 @@ jq --arg hash "$L1_GENESIS_HASH" \
   '.genesis.l1.hash = $hash' \
   "$DEPLOYMENT_CONFIG_PATH/rollup.json" > /tmp/rollup.json \
   && mv /tmp/rollup.json "$DEPLOYMENT_CONFIG_PATH/rollup.json"
-```
 
-Remove fields that the runtime `cgt-jovian/v1.16.5` op-node does not understand:
-
-```bash
+# 2) remove field the runtime op-node does not understand
 jq 'del(.da_challenge_contract_address)' \
   "$DEPLOYMENT_CONFIG_PATH/rollup.json" > /tmp/rollup.json \
   && mv /tmp/rollup.json "$DEPLOYMENT_CONFIG_PATH/rollup.json"
-```
 
-Ensure `chain_op_config` exists:
-
-```bash
+# 3) ensure chain_op_config exists
 jq '.chain_op_config = {
   "eip1559Elasticity": 6,
   "eip1559Denominator": 50,
@@ -218,37 +233,39 @@ jq \
   && mv /tmp/rollup.json "$DEPLOYMENT_CONFIG_PATH/rollup.json"
 ```
 
-Update `scripts/chain-start.sh` so `op-geth` gets the same fork times through overrides:
+Write the same fork times into `.envrc` as `OP_GETH_OVERRIDE_FLAGS`, so `op-geth` gets them
+through `scripts/run-op-geth.sh`（组件 flags 唯一真源，会 source .envrc 并追加该变量）：
 
 ```bash
 export FJORD GRANITE HOLOCENE ISTHMUS JOVIAN
 
 python3 - <<'PY'
 import os
+import re
 from pathlib import Path
 
-path = Path("scripts/chain-start.sh")
-s = path.read_text()
+envrc = Path(".envrc")
 
-lines = []
-for line in s.splitlines():
-    if "--override.fjord=" in line or "--override.granite=" in line:
-        continue
-    lines.append(line)
+forks = {
+    "fjord": os.environ["FJORD"],
+    "granite": os.environ["GRANITE"],
+    "holocene": os.environ["HOLOCENE"],
+    "isthmus": os.environ["ISTHMUS"],
+    "jovian": os.environ["JOVIAN"],
+}
 
-s = "\n".join(lines) + "\n"
+override = " ".join(f"--override.{name}={ts}" for name, ts in forks.items())
+new_line = f'export OP_GETH_OVERRIDE_FLAGS="{override}"'
 
-needle = 'OP_GETH_FLAGS="--verbosity=3 --datadir=$OP_GETH_DATA_PATH --http --http.corsdomain=* --http.vhosts=* --http.addr=0.0.0.0 --http.port=8645 --http.api=web3,debug,eth,txpool,net,engine,miner --ws --ws.addr=0.0.0.0 --ws.port=8646 --ws.origins=* --ws.api=debug,eth,txpool,net,engine,miner --syncmode=full --gcmode=archive --nodiscover --maxpeers=0 --networkid=42069 --authrpc.vhosts=* --authrpc.addr=0.0.0.0 --authrpc.port=8651 --authrpc.jwtsecret=$JWT_FILE --state.scheme=hash"'
+text = envrc.read_text()
+pattern = re.compile(r'^export OP_GETH_OVERRIDE_FLAGS=.*$', re.MULTILINE)
+if pattern.search(text):
+    text = pattern.sub(new_line, text)
+else:
+    text = text.rstrip("\n") + "\n" + new_line + "\n"
 
-insert = f'''{needle}
-OP_GETH_FLAGS="$OP_GETH_FLAGS --override.fjord={os.environ["FJORD"]}"
-OP_GETH_FLAGS="$OP_GETH_FLAGS --override.granite={os.environ["GRANITE"]} --override.holocene={os.environ["HOLOCENE"]} --override.isthmus={os.environ["ISTHMUS"]} --override.jovian={os.environ["JOVIAN"]}"'''
-
-if needle not in s:
-    raise SystemExit("Could not find OP_GETH_FLAGS line in scripts/chain-start.sh")
-
-s = s.replace(needle, insert)
-path.write_text(s)
+envrc.write_text(text)
+print("Updated .envrc OP_GETH_OVERRIDE_FLAGS:", override)
 PY
 ```
 
@@ -256,7 +273,7 @@ Confirm both sides match:
 
 ```bash
 jq '{fjord_time, granite_time, holocene_time, isthmus_time, jovian_time}' "$DEPLOYMENT_CONFIG_PATH/rollup.json"
-rg -- '--override\.(fjord|granite|holocene|isthmus|jovian)' scripts/chain-start.sh
+rg -- 'OP_GETH_OVERRIDE_FLAGS' .envrc
 ```
 
 ## 7. Restart L2 Services
