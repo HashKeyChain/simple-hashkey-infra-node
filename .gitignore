@@ -1,5 +1,6 @@
 # hashkey environment variables
-.envrc
+.envrc*
+!.envrc.example
 
 # ignore binary files
 bin/*
@@ -7,10 +8,10 @@ bin/*
 # geth database dir
 data
 
-nohup.out
-
 # ingore config files
-config/getting-started/*.json
-config/sepolia/*.json
-config/mainnet/*.json
-config/testnet/*.json
+config/
+
+#ignore ide
+.idea/
+.vscode/
+.build/

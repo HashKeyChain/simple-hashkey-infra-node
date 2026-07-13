@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-05-20T07:37:46Z",
+  "chainId": 177,
+  "rpcUrl": "https://mainnet.hsk.xyz",
+  "deployer": "0xfCb42db392E6641fFA057f143aCe1953759f708f",
+  "constructor": {
+    "recipient": "0xe9d87622269c6490d776be2f6ab5dcc9ecf76fde",
+    "minWithdrawalAmountWei": "10000000000000000000",
+    "withdrawalNetwork": 1
+  },
+  "impls": {
+    "BaseFeeVault": { "address": "0x3ec71d5FCC7Aa907d2a8B87d23f4FEF1755173FE", "deployTx": "0xf2baa29e7e53eb26cf8181de044291bcdbc5e90d0a01f605f876caff4dec97e2" },
+    "L1FeeVault": { "address": "0xBAab3dAbd75340517E05EA9c333b22506F9E6617", "deployTx": "0x0103a3e95cde62bee9d75ec926cfb3aef9402461ea2c26c3fdf258acf6f6ef94" },
+    "SequencerFeeVault": { "address": "0x059b5230b111cc9D61C62E17142F8FA4BDd25Ca5", "deployTx": "0xaa5e136d03e01fb3bd067a790a7a473231354c11abc048ebb8c96bcedf0915be" }
+  }
+}

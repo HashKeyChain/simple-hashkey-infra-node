@@ -1,0 +1,19 @@
+{
+  "timestamp": "2026-05-08T03:08:00Z",
+  "chainId": 1,
+  "rpcUrl": "https://ethereum-rpc.publicnode.com",
+  "deployer": "0xcf44D9A82C041d68b69F295e3772B57d14fC37aa",
+  "deployTx": "0xdcc15b31386167a2248f0077dfbfbc1176e3550d122b12dbc444555e6f42263c",
+  "etherscanVerify": "failed-invalid-api-key (rerun verify-on-etherscan.sh)",
+  "addresses": {
+    "newImpl":              "0x3a6CBE32Ed9E11662362400C293485109bdF2CcC",
+    "originalImpl":         "0x1d31a15050dbe75c6c060d6da696332a5cb943e1",
+    "superchainConfigProxy": "0xfd1255b6c09D939E7F3896A16C32CDBCD6F8B40A",
+    "superchainConfigProxyAdmin": "0x7986ed289935a0f47fc434c00cde309fe2c51f1c",
+    "paoSafe":              "0x441F31C4cdf772558D4EA31f3114de59aE145E7c"
+  },
+  "newImplSelfChecks": {
+    "version":   "1.1.1-beta.1",
+    "guardian":  "0x0000000000000000000000000000000000000000"
+  }
+}

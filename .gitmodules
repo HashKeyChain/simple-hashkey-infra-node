@@ -1,6 +1,9 @@
 [submodule "optimism"]
 	path = optimism
 	url = https://github.com/hashkeychain/optimism.git
+	ignore = all
 [submodule "op-geth"]
 	path = op-geth
 	url = https://github.com/ethereum-optimism/op-geth.git
+	ignore = all
+
