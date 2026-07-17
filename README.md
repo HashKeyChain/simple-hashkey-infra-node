@@ -1,136 +1,155 @@
 # Simple OP Stack Infra Node
 
-A simplified setup for deploying and running an OP Stack L2 on either a local
-L1 (Anvil) or an existing remote/testnet L1 RPC.
+本仓库用来**一键在本地拉起一条 HashKey 定制 OP Stack L2（CGT + 分叉到 Jovian）**，作为后续
+开发和验证 **Flashblocks** 组件的基座链。也支持接到远端/测试网 L1。
 
-## Required Tools
+> 为什么要"分叉到 Jovian"：Flashblocks 组件（rollup-boost / op-rbuilder / op-reth）必须与链的
+> 分叉世代一致。由于"部署即 Jovian 创世"的代码尚未开发，脚本走的是**部署到 fjord 基线 → 起链 →
+> 按时间自动激活各分叉到 Jovian** 的路径，一条命令搞定。
 
-* Install build tools
+---
+
+## TL;DR（新手照抄）
 
 ```shell
+# 0) 一次性：装工具 + 拉子模块 + 编译二进制
 brew install just make jq
+curl -L https://foundry.paradigm.xyz | bash && foundryup --install stable
+git submodule update --init --recursive
+bash scripts/build-binaries.sh
+
+# 1) 配置（本地 Anvil）
+cp .envrc.local.example .envrc
+source .envrc
+
+# 2) 一键部署一条全新链并推进到 Jovian（本地需 Docker 运行，供 anvil 用）
+bash scripts/deploy-chain/deploy-jovian-chain.sh local --reset -y
+
+# 3) 验证已到 Jovian
+cast call 0x420000000000000000000000000000000000000F "isJovian()(bool)" --rpc-url http://localhost:8645
 ```
 
-* Install foundry tool
+第 2 步跑完（本地约几分钟，主要耗在合约部署）链就处于 Jovian 状态，可以在此之上开发 Flashblocks。
+
+> 注意：如果你在**自己的终端**里跑，链会持续运行；若通过某些一次性 shell/CI 跑，后台守护进程可能随
+> 会话结束被回收——这时数据仍在，`bash scripts/chain-ops/chain-start.sh local` 即可恢复。
+
+---
+
+## 1. 前置工具
 
 ```shell
-curl -L https://foundry.paradigm.xyz | bash
-foundryup --install stable
+brew install just make jq            # 构建工具
+curl -L https://foundry.paradigm.xyz | bash && foundryup --install stable   # foundry: forge/cast/anvil
 ```
 
-## Download Submodules
+另需：**Docker**（本地跑 anvil、构建可复现 prestate）、Go、python3、openssl。
 
-先拉子模块，再构建二进制（构建依赖子模块源码）。
+## 2. 拉取子模块
+
+先拉子模块再构建（构建依赖子模块源码）：
 
 ```shell
 git submodule update --init --recursive
 ```
 
-## Build binaries
+## 3. 编译二进制
 
 ```shell
 bash scripts/build-binaries.sh
 ```
 
-> 若 `USE_FAULT_PROOFS=true`，脚本会额外构建 fault-proof 依赖：`cannon`、`op-program`，
-> 并用 `reproducible-prestate`（**需 Docker**，会拉取官方 `golang` 镜像）生成 `prestate.json` /
-> `prestate-proof.json`。其 `.pre` 必须等于 deploy-config 的 `faultGameAbsolutePrestate`，
-> 否则 op-challenger 无法参与已部署的 dispute game。
+产物落在 `bin/`：`op-geth`、`op-node`、`op-batcher`、`op-proposer`、`op-challenger`。
 
-## Configuration
+> `USE_FAULT_PROOFS=true` 时会额外构建 fault-proof 依赖 `cannon`、`op-program`，并用
+> `reproducible-prestate`（**需 Docker**）生成 `prestate.json` / `prestate-proof.json`。
+
+## 4. 配置 `.envrc`
 
 ```shell
-# Local Anvil L1 config
-cp .envrc.local.example .envrc
-
-# Or remote/testnet L1 config
-cp .envrc.testnet.example .envrc
-
-# Edit .envrc to configure versions for each component
+cp .envrc.local.example .envrc      # 本地 Anvil L1
 source .envrc
 ```
 
-## Runbooks
+关键变量见 `doc/chain-lifecycle.md`。默认已是 CGT + Fault Proof + 分叉到 Jovian 的本地配置。
+接远端/测试网 L1 时，在 `.envrc` 里把 `L1_RPC_URL` 等改成真实值即可（参考 `doc/history/remote_l1_cgt_jovian_deploy_runbook.md`）。
 
-- Local Anvil L1: `doc/local_cgt_jovian_upgrade_runbook.md`
-- Remote/testnet L1: `doc/remote_l1_cgt_jovian_deploy_runbook.md`
+---
 
-## Run Anvil (Local L1)
+## 5. 一键部署一条链到 Jovian
 
-```shell
-bash scripts/run-anvil.sh
-```
-
-## Deploy Contracts
+这是本仓库的主线用法：
 
 ```shell
-# Local Anvil L1
-bash scripts/chain-setup.sh local
-
-# Existing remote/testnet L1
-bash scripts/chain-setup.sh remote
+bash scripts/deploy-chain/deploy-jovian-chain.sh local --reset -y
 ```
 
-## Run individual components (`run-op-*.sh`)
+它会依次：**reset 旧链 → 部署合约生成 fjord 基线配置 → 起链 → 读实时 L2 时间自动计算各分叉激活
+时间（每档间隔 2s）→ 停/同步 rollup/重启 → 等待并校验分叉激活到 Jovian**。分叉时间的唯一真源是
+`.envrc` 的 `FORK_*_TIME`，脚本会把计算结果写回。
 
-`scripts/run-op-<component>.sh` 是各组件 flags 的唯一真源，既被 `chain-start.sh` 编排调用，
-也可单独运行用于调试/重启。单独运行前需先 `bash scripts/chain-setup.sh <local|remote>`
-生成配置，并确保 op-geth datadir 已初始化、JWT 已生成（首次由 `chain-start.sh` 幂等完成；
-或参考 `chain-start.sh` 里的 `op-geth init` 步骤手动初始化）。
+选项：
+
+| 选项 | 说明 | 默认 |
+|---|---|---|
+| `--reset` | 先清空 `data/` 与 `config/<ctx>/` 部署全新链；对已存在的链必须加 | 关 |
+| `-y` / `--yes` | 跳过 `chain-reset` 的不可逆二次确认 | 关 |
+| `--pace=SEC` | 相邻分叉激活间隔秒数 | `2` |
+| `--lead=SEC` | 从当前 L2 时间到首个待激活分叉的提前量（需 > 重启耗时） | `30` |
+| `--target=FORK` | 推进到哪个分叉为止：`granite`\|`holocene`\|`isthmus`\|`jovian` | `jovian` |
+
+验证：
 
 ```shell
-# op-geth（不再执行 op-geth init，需 datadir 已初始化）
-bash scripts/run-op-geth.sh
-
-# op-node
-bash scripts/run-op-node.sh
-
-# op-batcher
-bash scripts/run-op-batcher.sh
-
-# op-proposer
-bash scripts/run-op-proposer.sh
+cast call 0x420000000000000000000000000000000000000F "isJovian()(bool)" --rpc-url http://localhost:8645
+cast block latest --rpc-url http://localhost:8645 --json | jq '{number,timestamp,baseFeePerGas}'
 ```
 
-## Run op-challenger
+> 远端 L1：把 `local` 换成 `remote`（用 `.envrc` 里真实 `L1_RPC_URL`，不起 anvil）。
 
-当 `USE_FAULT_PROOFS=true` 时，`chain-start.sh` 会在启动链后**自动拉起** op-challenger
-（可用 `SKIP_CHALLENGER=1 bash scripts/chain-start.sh` 跳过）。也可单独运行：
+## 6. 管理运行中的链
 
 ```shell
-bash scripts/run-op-challenger.sh              # 前台
-bash scripts/run-op-challenger.sh --background # 后台，写 data/pids、data/logs
+bash scripts/chain-ops/chain-start.sh local     # 恢复/启动（数据已在，不重部署）
+bash scripts/chain-ops/chain-stop.sh            # 停止 L2（保留数据）
+bash scripts/deploy-chain/chain-reset.sh local  # 清空重来（破坏性，加 -y 跳过确认）
 ```
 
-前置条件与要点：
+日志 `data/logs/*.log`，PID `data/pids/*.pid`。更细的组件单独运行、op-challenger、bridge 与费用
+验证、排障，见 `doc/chain-lifecycle.md`。
 
-- 已构建 fault-proof 二进制：`bin/cannon`、`bin/op-program`、`bin/prestate.json`
-  （`build-binaries.sh` 在 `USE_FAULT_PROOFS=true` 时构建）。
-- `trace-type` 跟随 `GAME_TYPE`：`1`→`permissioned`，`0`→`cannon`，与部署时 `respectedGameType`
-  及 op-proposer 的 `--game-type` 保持一致。
-- prestate 一致性：启动前脚本会校验 `bin/prestate-proof.json` 的 `.pre` 是否等于
-  deploy-config 的 `faultGameAbsolutePrestate`，不一致会直接报错退出。
-- L1 Beacon：`--l1-beacon` 为必填项。本地 anvil 无 Beacon API，默认回退到 L1 RPC；
-  calldata DA 下通常不触发 blob 请求，若因 beacon 起不来需指向真实 Beacon 或运行 fake beacon
-  并用 `L1_BEACON_URL` 覆盖。
-- permissioned 模式下 challenger 地址必须是部署时授权的 challenger，用
-  `OP_CHALLENGER_PRIVATE_KEY` 覆盖默认私钥。
+---
 
-## Version Configuration
+## 脚本目录
 
-Each component can be configured with its own version/branch/commit:
+- `scripts/deploy-chain/` —— **部署一条链**：`deploy-jovian-chain.sh`(一键)、`chain-setup`、
+  `deploy-contracts`、`patch-rollup-config`、`deploy-multicall3`、`activate-fork`、`chain-reset`。
+- `scripts/chain-ops/` —— **启动/停止链**：`chain-start`、`chain-stop`、各 `run-op-*`、`run-anvil`。
+- `scripts/`（根）—— 通用：`build-binaries`、`bridge-to-l2*`、`upgrade-systemconfig*`；`scripts/jovian/` 为 Jovian SystemConfig 参数操作。
 
-| Variable | Description | Example |
+## 文档导航
+
+- **详细手册（生命周期 / 组件 / 排障 / bridge+验证）**：`doc/chain-lifecycle.md`
+- **下一步：接入 Flashblocks** —— 架构与任务计划 `doc/flashblocks_upgrade_plan.md`；本地实现步骤 `doc/flashblocks_local_impl.md`
+- 历史/归档文档（旧手动 runbook、远端部署）：`doc/history/`
+
+---
+
+## 组件版本配置
+
+每个组件可单独指定版本/分支/commit（`.envrc`）：
+
+| 变量 | 说明 | 示例 |
 |----------|-------------|---------|
-| `OP_GETH_REF` | op-geth version | `v1.101411.1` |
-| `OP_NODE_REF` | op-node version | `v1.9.5` |
-| `OP_BATCHER_REF` | op-batcher version | `v1.9.5` |
-| `OP_PROPOSER_REF` | op-proposer version | `v1.9.5` |
-| `OP_CHALLENGER_REF` | op-challenger version（与 op-node 同分支，需识别最新 L1 头部） | `cgt-jovian/v1.16.5` |
-| `OP_PROGRAM_REF` | op-program version（跟随合约同源） | `op-contracts/v2.0.0-beta.3` |
-| `CANNON_REF` | cannon version（跟随合约同源） | `op-contracts/v2.0.0-beta.3` |
-| `OP_CONTRACTS_REF` | contracts-bedrock version | `op-contracts/v2.0.0-beta.3` |
+| `OP_GETH_REF` | op-geth 版本 | `v1.101605.0` |
+| `OP_NODE_REF` | op-node 版本（CGT/Jovian 自研分支） | `cgt-jovian/v1.16.5` |
+| `OP_BATCHER_REF` | op-batcher 版本 | `op-batcher/v1.16.3` |
+| `OP_PROPOSER_REF` | op-proposer 版本 | `op-proposer/v1.10.0` |
+| `OP_CHALLENGER_REF` | op-challenger 版本（与 op-node 同分支，需识别最新 L1 头部） | `cgt-jovian/v1.16.5` |
+| `OP_PROGRAM_REF` | op-program 版本（跟随合约同源） | `op-contracts/v2.0.0-beta.3` |
+| `CANNON_REF` | cannon 版本（跟随合约同源） | `op-contracts/v2.0.0-beta.3` |
+| `OP_CONTRACTS_REF` | contracts-bedrock 版本 | `op-contracts/v2.0.0-beta.3` |
 
 > fault-proof 组件（`op-challenger`/`op-program`/`cannon`）的 ref 应与 `OP_CONTRACTS_REF` 指向
-> **同一 monorepo commit**，这样 MIPS 实现与 prestate 才与已部署合约配套。注意官方 tag 快照不含
-> 本链 CGT/Jovian 执行定制；要对定制链算出正确状态根，需换成含相同定制的 op-program。
+> **同一 monorepo commit**，MIPS 实现与 prestate 才与已部署合约配套。官方 tag 快照不含本链
+> CGT/Jovian 执行定制；要对定制链算出正确状态根，需换成含相同定制的 op-program。

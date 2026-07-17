@@ -4,7 +4,7 @@
 # 不启动 L2 节点，仅完成配置生成。
 #
 # 用法:
-#   bash scripts/chain-setup.sh [local|remote]
+#   bash scripts/deploy-chain/chain-setup.sh [local|remote]
 #
 # 参数:
 #   local  - 本地环境：若 L1 未运行则自动启动 anvil，再部署合约并生成配置
@@ -22,7 +22,7 @@
 set -e
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
-BASE_PATH=$(cd "$SCRIPT_DIR/.." && pwd)
+BASE_PATH=$(cd "$SCRIPT_DIR/../.." && pwd)
 cd "$BASE_PATH"
 
 source .envrc
@@ -40,7 +40,7 @@ if [ -z "$CHAIN_ENV" ]; then
 fi
 
 if [ "$CHAIN_ENV" != "local" ] && [ "$CHAIN_ENV" != "remote" ]; then
-  echo "Usage: bash scripts/chain-setup.sh [local|remote]"
+  echo "Usage: bash scripts/deploy-chain/chain-setup.sh [local|remote]"
   exit 1
 fi
 
@@ -135,4 +135,4 @@ echo "  rollup.json  -> $DEPLOYMENT_CONFIG_PATH/rollup.json"
 echo "  genesis.json -> $DEPLOYMENT_CONFIG_PATH/genesis.json"
 echo "  artifact.json -> $DEPLOYMENT_CONFIG_PATH/artifact.json"
 echo ""
-echo "Next: run 'bash scripts/chain-start.sh $CHAIN_ENV' to start all services."
+echo "Next: run 'bash scripts/chain-ops/chain-start.sh $CHAIN_ENV' to start all services."

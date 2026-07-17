@@ -1,0 +1,514 @@
+# 本地接入 Flashblocks 实现方案（simple 项目）
+
+> **前置基座链**：先用一键脚本拉起一条已到 Jovian 的本地链，再在其上接 Flashblocks：
+> `bash scripts/deploy-chain/deploy-jovian-chain.sh local --reset -y`（见仓库 `README.md`、
+> `doc/chain-lifecycle.md`）。本文档假设这条基座链已就绪。
+
+> 范围：只覆盖**本地私网验证**。基于现有 `scripts/chain-ops/chain-start.sh` 启动的链，
+> 在本机把 rollup-boost + op-rbuilder + flashblocks-websocket-proxy + flashblocks-aware RPC 接进去并验证。
+> 不改现有 op-node / op-geth / 合约代码。
+>
+> **本地=生产同构原则**：本地验证的组件、拓扑、数据流、启用顺序（off→dry_run→enabled）
+> 与将来生产上线**完全一致**，只在规模上不同（单机、单 Sequencer、无 op-conductor/HA）。
+> 因此 **flashblocks-websocket-proxy 不省略**——即使本地只有一个 RPC 消费者，也保留
+> `op-rbuilder → rollup-boost → ws-proxy → flashblocks-aware RPC` 这条完整链路，
+> 保证本地跑通的就是生产要跑的。op-conductor 是生产 HA 才需要，本地不引入，但它不改变这条数据流。
+
+---
+
+## 1. 目标
+
+在保持现有链不变（Legacy CGT、Jovian 分叉、2s 正式块、单 Sequencer、Fault Proof）的前提下：
+
+1. 用 rollup-boost 作为 op-node 与执行层之间的 Engine API 代理。
+2. 用 op-rbuilder（reth 系）作为 flashblocks 区块构建器，产出 ~200ms 预确认。
+3. 保留现有 **op-geth 作为 canonical fallback + payload 校验基准**。
+4. 通过 `off → dry_run → enabled` 三档，逐步验证到用户可见 `pending` 预确认。
+
+最终本地目标架构：
+
+```text
+序列器侧                                        用户面（RPC 副本，与生产同构）
+                  ┌─ op-geth(8651) canonical fallback + VALID 校验
+op-node ─Engine─> rollup-boost(8551)
+                  └─ op-rbuilder(8661) builder + 200ms flashblocks
+                         │ flashblocks 出口 ws(1111)
+                         ▼
+                  rollup-boost 广播(1112) ─> ws-proxy(1113) ─> op-reth(8745, --flashblocks-url)
+                                                                    ▲ Engine(8751)
+                                                                    │
+                                                          verifier op-node(9555, 不出块)
+                                                                    │
+                                                              用户查 pending
+```
+
+---
+
+## 2. 现状：现有端口与链路（不要动）
+
+| 组件 | 端口 | 说明 |
+|---|---|---|
+| anvil (L1) | 8545 | 本地 L1 |
+| op-geth HTTP | 8645 | `L2_RPC_URL` |
+| op-geth WS | 8646 | |
+| op-geth Engine (authrpc) | 8651 | op-node 当前 `--l2` 指向这里 |
+| op-node rollup RPC | 9545 | `OP_ROLLUP_PORT` |
+| op-batcher RPC | 9645 | |
+| op-proposer RPC | 8560 | |
+
+现有关键接线（`scripts/chain-ops/run-op-node.sh`）：
+
+```text
+op-node --l2=http://localhost:8651  --l2.jwt-secret=$JWT_FILE
+```
+
+**接入 flashblocks 只改这一根线**：把 op-node 的 `--l2` 从 op-geth(8651) 改指到 rollup-boost(8551)，其余组件不动。
+
+---
+
+## 3. 目标：新增组件与端口分配
+
+新增端口（本地可自定，避开已用端口即可）：
+
+| 新组件 | 端口 | 说明 |
+|---|---|---|
+| rollup-boost Engine（op-node 连这里） | 8551 | 对上游 op-node 暴露 Engine API |
+| rollup-boost flashblocks 广播 WS | 1112 | 对外 flashblocks 流 |
+| op-rbuilder Engine (authrpc) | 8661 | rollup-boost 的 builder-url |
+| op-rbuilder HTTP | 8663 | reth RPC（同步/调试/对照用） |
+| op-rbuilder WS | 8664 | |
+| op-rbuilder flashblocks 出口 WS | 1111 | op-rbuilder → rollup-boost |
+| flashblocks-websocket-proxy 对外 | 1113 | 用户/RPC 订阅入口 |
+| flashblocks-aware RPC (op-reth) HTTP | 8745 | 对用户提供 `pending` 预确认 |
+| flashblocks-aware RPC (op-reth) Engine authrpc | 8751 | 被其 verifier op-node 驱动 |
+| RPC 副本 verifier op-node RPC | 9555 | 驱动上面的 op-reth（不出块，仅同步）|
+
+**JWT 全链路复用同一个** `data/op-geth/jwt.txt`：op-node ↔ rollup-boost ↔ (op-geth, op-rbuilder)，
+以及 RPC 副本的 verifier op-node ↔ op-reth 都用它。
+
+> **RPC 副本为什么是 op-node + op-reth 一对**：op-reth 是纯执行层，自己不能从 L1 派生链，
+> 必须由一个 op-node（verifier 模式、不出块）通过 Engine API 驱动它同步 canonical 链；
+> op-reth 再叠加 flashblocks 流算出 `pending`。生产的 flashblocks RPC 节点就是这个结构，
+> 本地照搬，保证同构。
+
+---
+
+## 4. 组件与版本（已锁定 Jovian 世代）
+
+Rust 组件需另行拉源码 + 编译（当前 `bin/` 只有 Go 组件）。
+
+**交付策略：全部 fork 到 `HSKChain` 后从源码自编**（供应链自主可控 / 可审计）。
+下表"上游源"是 fork 的来源，实际 clone/编译一律走 `HSKChain/*` 镜像仓库并锁 tag。
+
+**版本世代必须与本链对齐**：本链是 **Jovian 世代、未上 Karst**（op-node `cgt-jovian/v1.16.5`、
+op-geth `v1.101605.0`）。所有新组件**锁在 Jovian 世代**，不能追最新——最新版都已进入
+Karst / Engine API V5（`getPayloadV5`）世代，要求 op-node ≥ v1.19.1，与本链不兼容。
+
+| 组件 | 上游源 → fork 仓库 | 版本(tag) | 为什么是这个版本 |
+|---|---|---|---|
+| rollup-boost | `flashbots/rollup-boost` → `HSKChain/rollup-boost` | **v0.7.11** | 官方 Jovian（Upgrade 17）钉的版本；内部 reth 依赖升 1.9.3，修正 Jovian 下 payload id 计算。不用 v0.7.16（Karst/PayloadVersion V5）。 |
+| op-rbuilder | `flashbots/op-rbuilder` → `HSKChain/op-rbuilder`（reth 系） | **v0.2.13** | 官方 Jovian 钉的版本；v0.2.11 不兼容 Jovian（flashblocks payload 缺 blob gas used），v0.2.12 起 Jovian ready，v0.2.13 推荐。不用 0.4.x（reth 2.3.x/Karst）。 |
+| flashblocks-aware RPC（op-reth） | `paradigmxyz/reth` → `HSKChain/reth` | **v1.9.3** | 官方 Jovian 表：普通节点 v1.9.2，**跑 flashblocks 用 v1.9.3**。flashblocks 为 op-reth **原生内置**（`--flashblocks-url`），**不需要 base 的 fork**。op-reth 是 reth 的 bin target（`--bin op-reth`）。不用 v2.3.x（Karst/getPayloadV5）。 |
+| flashblocks-websocket-proxy | 同 `HSKChain/rollup-boost`（仓库内 `crates/websocket-proxy`） | **v0.7.11**（与 rollup-boost 同仓库同 tag） | ⚠️ **不要用 `base/flashblocks-websocket-proxy`**：该独立仓库 2025-05 已归档，代码并入 base/node monorepo。用 rollup-boost 自带的 websocket-proxy crate，同仓库同版本、Flashbots 活跃维护、天然对齐。 |
+
+> 说明：
+> - **fork 清单（共 3 个源仓库）**：`flashbots/rollup-boost@v0.7.11`、`flashbots/op-rbuilder@v0.2.13`、
+>   `paradigmxyz/reth@v1.9.3`，分别 fork 为 `HSKChain/rollup-boost`、`HSKChain/op-rbuilder`、`HSKChain/reth`。
+>   websocket-proxy 在 rollup-boost 仓库内（`crates/websocket-proxy`），**不单独 fork**。
+> - **op-reth 从源码自编**：op-reth 的真正源码在 **`paradigmxyz/reth`**，`cargo build --release --bin op-reth`。
+>   ⚠️ **不要去 `ethereum-optimism/optimism` monorepo 找 v1.9.3** —— 该 monorepo 里根本没有 v1.9.3 这个 tag
+>   （op-reth 搬进 monorepo 是 Karst 世代之后的事，monorepo 里那套是 Karst 代 v2.3.x，本链不能用）。
+> - flashblocks 是 op-reth 原生特性（上游 reth PR #18094），一个 `--flashblocks-url` flag 即可，无需 base/node 封装。
+>   编完先 `op-reth node --help | grep flashblocks` 确认 flag 存在。
+> - websocket-proxy：`v0.7.11` tag 里就含 `crates/websocket-proxy`（还含 `flashblocks-rpc`），
+>   与 rollup-boost 同源同版本，**优先用它**（用 tag，别用 main —— main 已是 Karst 代）。
+>   备选是 base/base（BaseHub）monorepo 的 `crates/infra/websocket-proxy`（带 Brotli 压缩 / API key 鉴权 / 限流等
+>   生产特性，活跃维护，协议一致可平替），需单独拉 monorepo。归档的独立 base 仓库不再采用。
+> - **版权**：rollup-boost = MIT，op-rbuilder / reth = MIT OR Apache-2.0，均允许 fork/改/编镜像/对外提供；
+>   fork 后保留 LICENSE 与版权声明（Apache 另保留 NOTICE 并标注修改），对外提供用自有品牌名，勿暗示官方背书。
+> - **本次决策**：走 v1.16.5 + flashbots 仓库路线，**不 rebase 到最新版**；OP monorepo（Karst 代）与整套 Karst
+>   追赶为后续独立事项。版本一旦选定，私网/生产固定不变并记录 commit。
+
+统一放到 `bin/`（与现有 Go 二进制一致）：`bin/rollup-boost`、`bin/op-rbuilder`、`bin/flashblocks-ws-proxy`、`bin/op-reth`（flashblocks RPC 用）。
+
+---
+
+## 5. 前置：chain-spec / genesis 一致性（最关键的一步）
+
+op-rbuilder（reth）与 flashblocks RPC（op-reth）**必须用与 op-geth 完全相同的创世**，否则一切对照无意义。
+
+- 现有 op-geth 用 `config/local-mainnet/genesis.json`（`OP_GETH_GENESIS_FILE`）初始化。
+- op-reth / op-rbuilder 直接 `--chain <该 genesis.json>` 加载 OP genesis。
+
+验收点（P0 的门）：
+
+```bash
+# op-geth 创世 hash
+cast block 0 --rpc-url http://localhost:8645 -f hash
+# op-rbuilder 创世 hash（起 op-rbuilder 后）
+cast block 0 --rpc-url http://localhost:8663 -f hash
+# 两者必须完全一致
+```
+
+若创世 hash 不一致 → 停止，先解决 genesis 解析差异（常见于 CGT / 预置合约 alloc、extraData）。
+
+---
+
+## 6. 脚本改造清单（贴合现有编排）
+
+现有编排风格：`chain-start.sh` 用 `_CALLER_*` 下传变量，各 `run-op-*.sh` 是"纯组件启动器"。沿用这个风格，新增 5 个启动器（op-rbuilder / rollup-boost / flashblocks-proxy / flashblocks-rpc / flashblocks-opnode）+ 1 个构建脚本，并给 `chain-start.sh` / `run-op-node.sh` 加一个 `FLASHBLOCKS_MODE` 开关。
+
+### 6.1 `.envrc` 追加
+
+```bash
+# ===== Flashblocks（本地验证）=====
+# off      : 不接入，链路与现在完全一致（默认）
+# dry_run  : op-node 走 rollup-boost；正式块仍由 op-geth 出，builder payload 只做校验对照
+# enabled  : 正式采用 op-rbuilder 块，产出 200ms flashblocks
+export FLASHBLOCKS_MODE=off
+
+export RB_ENGINE_PORT=8551          # rollup-boost Engine（op-node 连这里）
+export RB_FLASHBLOCKS_WS_PORT=1112  # rollup-boost 对外 flashblocks 广播
+export RBUILDER_AUTHRPC_PORT=8661   # op-rbuilder Engine
+export RBUILDER_HTTP_PORT=8663
+export RBUILDER_WS_PORT=8664
+export RBUILDER_FB_WS_PORT=1111     # op-rbuilder → rollup-boost 的 flashblocks 出口
+export FB_PROXY_PORT=1113           # ws-proxy 对外
+export FB_RPC_HTTP_PORT=8745        # flashblocks-aware RPC(op-reth) 对用户
+export FB_RPC_AUTHRPC_PORT=8751     # op-reth Engine（被 verifier op-node 驱动）
+export FB_RPC_OPNODE_PORT=9555      # RPC 副本 verifier op-node RPC
+
+# Rust 组件：全部 fork 到 HSKChain 后从源码自编，锁 tag、记录 commit
+export FB_GIT_ORG=https://github.com/HSKChain   # fork 后的组织
+export ROLLUP_BOOST_REF=v0.7.11    # HSKChain/rollup-boost（含 crates/websocket-proxy，一起编）
+export OP_RBUILDER_REF=v0.2.13     # HSKChain/op-rbuilder；Jovian ready（v0.2.11 不兼容 Jovian）
+export OP_RETH_REF=v1.9.3          # HSKChain/reth 的 --bin op-reth；flashblocks 内置，必须 v1.9.3
+# 注：websocket-proxy 不单独 fork —— 直接用 rollup-boost 仓库(ROLLUP_BOOST_REF)里的 crates/websocket-proxy
+```
+
+### 6.2 新增 `scripts/build-flashblocks.sh`
+
+```bash
+#!/bin/bash
+# 编译 flashblocks 相关 Rust 组件到 bin/（需 rust toolchain）
+# 全部从 HSKChain fork 仓库源码自编，锁 tag。首次编译较慢（reth 依赖重，建议 ≥16C/32G）。
+source .envrc
+set -e
+mkdir -p "$BASE_PATH/bin"
+
+# rollup-boost + websocket-proxy（同一仓库、同一 tag，一起编）
+git clone "$FB_GIT_ORG/rollup-boost" "$BASE_PATH/rollup-boost" 2>/dev/null || true
+cd "$BASE_PATH/rollup-boost" && git checkout "$ROLLUP_BOOST_REF"
+cargo build --release --bin rollup-boost --bin websocket-proxy
+cp target/release/rollup-boost "$BASE_PATH/bin/rollup-boost"
+cp target/release/websocket-proxy "$BASE_PATH/bin/flashblocks-ws-proxy"
+
+# op-rbuilder
+git clone "$FB_GIT_ORG/op-rbuilder" "$BASE_PATH/op-rbuilder" 2>/dev/null || true
+cd "$BASE_PATH/op-rbuilder" && git checkout "$OP_RBUILDER_REF" && cargo build --release --bin op-rbuilder
+cp target/release/op-rbuilder "$BASE_PATH/bin/op-rbuilder"
+
+# （websocket-proxy 已在上面随 rollup-boost 一起编，无需单独仓库；不要用归档的 base/flashblocks-websocket-proxy）
+
+# op-reth（flashblocks-aware RPC）：从 HSKChain/reth（fork 自 paradigmxyz/reth@v1.9.3）源码自编。
+# op-reth 是 reth 仓库里的一个 bin target，只编它即可。
+# ⚠️ 不要从 ethereum-optimism/optimism monorepo 找 v1.9.3 —— 那里没有该 tag（op-reth 搬进 monorepo
+#    是 Karst 世代之后的事，monorepo 里是 Karst 代 v2.3.x，本链不能用）。
+git clone "$FB_GIT_ORG/reth" "$BASE_PATH/reth" 2>/dev/null || true
+cd "$BASE_PATH/reth" && git checkout "$OP_RETH_REF" && cargo build --release --bin op-reth
+cp target/release/op-reth "$BASE_PATH/bin/op-reth"
+# 校验 flashblocks flag 已编入
+"$BASE_PATH/bin/op-reth" node --help | grep -q flashblocks && echo "op-reth: flashblocks flag OK"
+
+cd "$BASE_PATH"
+echo "Flashblocks binaries built into bin/"
+```
+
+> 注：以上 flag/子命令名以各仓库 `--help` 为准，本文给的是代表值。
+
+### 6.3 新增 `scripts/run-op-rbuilder.sh`
+
+```bash
+#!/bin/bash
+# op-rbuilder：reth 系 flashblocks builder。用与 op-geth 相同 genesis。
+source .envrc
+OP_GETH_DATA_PATH="${_CALLER_OP_GETH_DATA_PATH:-$BASE_PATH/data/op-geth}"
+JWT_FILE="${_CALLER_JWT_FILE:-$OP_GETH_DATA_PATH/jwt.txt}"
+GENESIS="${_CALLER_OP_GETH_GENESIS_FILE:-$BASE_PATH/config/$DEPLOYMENT_CONTEXT/genesis.json}"
+DATADIR="$BASE_PATH/data/op-rbuilder"
+mkdir -p "$DATADIR"
+
+exec op-rbuilder node \
+  --chain "$GENESIS" \
+  --datadir "$DATADIR" \
+  --authrpc.addr 0.0.0.0 --authrpc.port "$RBUILDER_AUTHRPC_PORT" --authrpc.jwtsecret "$JWT_FILE" \
+  --http --http.addr 0.0.0.0 --http.port "$RBUILDER_HTTP_PORT" --http.api eth,web3,net,debug,txpool \
+  --ws --ws.addr 0.0.0.0 --ws.port "$RBUILDER_WS_PORT" \
+  --disable-discovery --no-persist-peers \
+  --rollup.sequencer-http "$L2_RPC_URL" \
+  --flashblocks.enabled --flashblocks.addr 0.0.0.0 --flashblocks.port "$RBUILDER_FB_WS_PORT" \
+  --flashblocks.block-time 250
+```
+
+### 6.4 新增 `scripts/run-rollup-boost.sh`
+
+```bash
+#!/bin/bash
+# rollup-boost：op-node ↔ (op-geth fallback + op-rbuilder builder) 的 Engine 代理。
+source .envrc
+OP_GETH_DATA_PATH="${_CALLER_OP_GETH_DATA_PATH:-$BASE_PATH/data/op-geth}"
+JWT_FILE="${_CALLER_JWT_FILE:-$OP_GETH_DATA_PATH/jwt.txt}"
+
+# 模式：dry_run → builder 只校验不采用；enabled → 采用 builder 块
+EXEC_MODE_FLAG=""
+[ "$FLASHBLOCKS_MODE" = "dry_run" ] && EXEC_MODE_FLAG="--execution-mode=dry-run"
+[ "$FLASHBLOCKS_MODE" = "enabled" ] && EXEC_MODE_FLAG="--execution-mode=enabled"
+
+exec rollup-boost \
+  --rpc-addr 0.0.0.0 --rpc-port "$RB_ENGINE_PORT" \
+  --jwt-path "$JWT_FILE" \
+  --l2-url  http://localhost:8651 \
+  --l2-jwt-path "$JWT_FILE" \
+  --builder-url http://localhost:"$RBUILDER_AUTHRPC_PORT" \
+  --builder-jwt-path "$JWT_FILE" \
+  --flashblocks --flashblocks-builder-url ws://localhost:"$RBUILDER_FB_WS_PORT" \
+  --flashblocks-addr 0.0.0.0 --flashblocks-port "$RB_FLASHBLOCKS_WS_PORT" \
+  $EXEC_MODE_FLAG
+```
+
+### 6.5 新增 `scripts/run-flashblocks-proxy.sh`
+
+```bash
+#!/bin/bash
+# 订阅 rollup-boost 的 flashblocks 广播，对用户侧扇出。
+source .envrc
+exec flashblocks-ws-proxy \
+  --upstream-ws ws://localhost:"$RB_FLASHBLOCKS_WS_PORT" \
+  --listen-addr 0.0.0.0:"$FB_PROXY_PORT"
+```
+
+### 6.6 新增 `scripts/run-flashblocks-rpc.sh`（op-reth，订阅 ws-proxy）
+
+flashblocks 是 op-reth **原生特性**，用 `--flashblocks-url` 订阅 ws-proxy（**不是**直连 rollup-boost，
+以与生产同构）。本地用 `ws://`（明文），避开 op-reth 某些构建的 `wss://` TLS 未编译问题。
+
+```bash
+#!/bin/bash
+# flashblocks-aware RPC：op-reth 订阅 ws-proxy 的 flashblocks，对外提供 pending。
+# 由 run-flashblocks-opnode.sh（verifier op-node）通过 Engine API 驱动同步 canonical 链。
+source .envrc
+OP_GETH_DATA_PATH="${_CALLER_OP_GETH_DATA_PATH:-$BASE_PATH/data/op-geth}"
+JWT_FILE="${_CALLER_JWT_FILE:-$OP_GETH_DATA_PATH/jwt.txt}"
+GENESIS="$BASE_PATH/config/$DEPLOYMENT_CONTEXT/genesis.json"
+DATADIR="$BASE_PATH/data/flashblocks-rpc"
+mkdir -p "$DATADIR"
+
+exec op-reth node \
+  --chain "$GENESIS" --datadir "$DATADIR" \
+  --authrpc.addr 0.0.0.0 --authrpc.port "$FB_RPC_AUTHRPC_PORT" --authrpc.jwtsecret "$JWT_FILE" \
+  --http --http.addr 0.0.0.0 --http.port "$FB_RPC_HTTP_PORT" \
+  --http.api eth,web3,net,debug \
+  --rollup.sequencer-http "$L2_RPC_URL" \
+  --flashblocks-url ws://localhost:"$FB_PROXY_PORT"
+  # 若要让该副本直接用 flashblocks 驱动链前进，可加 --flashblock-consensus（本地默认不加，靠下面的 verifier op-node 驱动）
+```
+
+### 6.6b 新增 `scripts/run-flashblocks-opnode.sh`（驱动上面 op-reth 的 verifier op-node）
+
+```bash
+#!/bin/bash
+# RPC 副本的 verifier op-node：不出块，只通过 Engine API 驱动 op-reth 同步 canonical 链。
+source .envrc
+L1_RPC_URL="${_CALLER_L1_RPC_URL:-$L1_RPC_URL}"
+OP_GETH_DATA_PATH="${_CALLER_OP_GETH_DATA_PATH:-$BASE_PATH/data/op-geth}"
+JWT_FILE="${_CALLER_JWT_FILE:-$OP_GETH_DATA_PATH/jwt.txt}"
+ROLLUP_FILE="${_CALLER_OP_NODE_ROLLUP_FILE:-$BASE_PATH/config/$DEPLOYMENT_CONTEXT/rollup.json}"
+
+exec op-node \
+  --log.level=info --rpc.addr=0.0.0.0 --rpc.port="$FB_RPC_OPNODE_PORT" \
+  --l1="$L1_RPC_URL" --l1.rpckind="$L1_RPC_KIND" --l1.beacon.ignore \
+  --l2=http://localhost:"$FB_RPC_AUTHRPC_PORT" --l2.jwt-secret="$JWT_FILE" \
+  --l2.enginekind=reth \
+  --rollup.config="$ROLLUP_FILE" --p2p.disable
+  # 注意：不加 --sequencer.enabled（这是只读副本，不出块）
+```
+
+### 6.7 改 `scripts/chain-ops/run-op-node.sh`：`--l2` 按模式切换
+
+把第 22 行的固定 `--l2=http://localhost:8651` 改成按 `FLASHBLOCKS_MODE` 选择：
+
+```bash
+# FLASHBLOCKS_MODE=off → 直连 op-geth(8651)；dry_run/enabled → 走 rollup-boost(RB_ENGINE_PORT)
+if [ "${FLASHBLOCKS_MODE:-off}" = "off" ]; then
+  L2_ENGINE_URL="http://localhost:8651"
+else
+  L2_ENGINE_URL="http://localhost:${RB_ENGINE_PORT:-8551}"
+fi
+base_flags="--log.level=info --rpc.addr=0.0.0.0 --l1=$L1_RPC_URL --l1.rpckind=$L1_RPC_KIND --l2=$L2_ENGINE_URL --l2.jwt-secret=$JWT_FILE"
+```
+
+### 6.8 改 `scripts/chain-ops/chain-start.sh`：按模式拉起新组件
+
+在启动 op-geth 之后、启动 op-node 之前，插入（模式非 off 时）：
+
+```bash
+# ---------- Flashblocks 组件（FLASHBLOCKS_MODE != off）----------
+export _CALLER_OP_GETH_GENESIS_FILE="$OP_GETH_GENESIS_FILE"
+if [ "${FLASHBLOCKS_MODE:-off}" != "off" ]; then
+  echo "Starting op-rbuilder..."
+  nohup bash "$SCRIPT_DIR/run-op-rbuilder.sh" >> "$LOG_DIR/op-rbuilder.log" 2>&1 &
+  echo $! > "$PID_DIR/op-rbuilder.pid"
+  sleep 3
+  echo "Starting rollup-boost (mode=$FLASHBLOCKS_MODE)..."
+  nohup bash "$SCRIPT_DIR/run-rollup-boost.sh" >> "$LOG_DIR/rollup-boost.log" 2>&1 &
+  echo $! > "$PID_DIR/rollup-boost.pid"
+  sleep 2
+fi
+```
+
+在最后（用户面，enabled 时）追加完整用户面链路：ws-proxy → op-reth(RPC) → 其 verifier op-node。
+**本地=生产同构，proxy 不省略。**
+
+```bash
+if [ "${FLASHBLOCKS_MODE:-off}" = "enabled" ] && [ "${SKIP_FB_USER:-0}" != "1" ]; then
+  echo "Starting flashblocks ws-proxy..."
+  nohup bash "$SCRIPT_DIR/run-flashblocks-proxy.sh" >> "$LOG_DIR/fb-proxy.log" 2>&1 &
+  echo $! > "$PID_DIR/fb-proxy.pid"
+  sleep 1
+  echo "Starting flashblocks-aware RPC (op-reth)..."
+  nohup bash "$SCRIPT_DIR/run-flashblocks-rpc.sh" >> "$LOG_DIR/fb-rpc.log" 2>&1 &
+  echo $! > "$PID_DIR/fb-rpc.pid"
+  sleep 2
+  echo "Starting flashblocks RPC verifier op-node..."
+  nohup bash "$SCRIPT_DIR/run-flashblocks-opnode.sh" >> "$LOG_DIR/fb-opnode.log" 2>&1 &
+  echo $! > "$PID_DIR/fb-opnode.pid"
+fi
+```
+
+### 6.9 改 `scripts/chain-ops/chain-stop.sh`：一并停
+
+在 `for name in ...` 列表和 `stop_matching_processes` 里补上新组件：
+
+```bash
+for name in fb-opnode fb-rpc fb-proxy rollup-boost op-rbuilder op-challenger op-proposer op-batcher op-node op-geth; do
+  ...
+done
+stop_matching_processes "fb-opnode"    "op-node "      "--rpc.port=${FB_RPC_OPNODE_PORT:-9555}"
+stop_matching_processes "fb-rpc"       "op-reth "      "--datadir=$DATA_DIR/flashblocks-rpc"
+stop_matching_processes "op-rbuilder"  "op-rbuilder "  "--datadir=$DATA_DIR/op-rbuilder"
+stop_matching_processes "rollup-boost" "rollup-boost " "--rpc-port=${RB_ENGINE_PORT:-8551}"
+```
+
+---
+
+## 7. 分步实施与验证门（本地）
+
+> 每一步是一个"可回退的稳定态"。上一步的验证门不过，不进下一步。
+
+### P0 — 编译 + 创世对齐
+1. `bash scripts/build-flashblocks.sh` 生成 4 个 Rust 二进制到 `bin/`。
+2. 单独起 op-rbuilder（临时用 off 链的 genesis），比对创世 hash（见 §5）。
+- **门**：`op-rbuilder` 创世 hash == `op-geth` 创世 hash。
+
+### P1 — op-rbuilder 影子同步
+1. 保持现网正常出块（`FLASHBLOCKS_MODE=off` 的链在跑）。
+2. 让 op-rbuilder 以 verifier 方式导入 canonical 历史（`--rollup.sequencer-http=$L2_RPC_URL`）。
+3. 逐块对照（重点 Granite/Holocene/Isthmus/Jovian 激活块 + 若干普通块）。
+- **门**：op-rbuilder 追平链头；关键块 `blockHash` / `stateRoot` 与 op-geth 一致；无 invalid block。
+- 用 §8.1 对照脚本。
+
+### P2 — dry_run
+1. `FLASHBLOCKS_MODE=dry_run`，`bash scripts/chain-ops/chain-stop.sh && bash scripts/chain-ops/chain-start.sh local`。
+2. op-node 走 rollup-boost；正式块仍由 op-geth 出，builder payload 只做校验。
+3. 覆盖：普通转账 / 合约调用 / 失败交易 / CGT gas 支付 / deposit / withdrawal / L1 origin 切换。
+- **门**：rollup-boost 日志中 builder payload 全部 `VALID`，`Invalid payload = 0`；2s 出块不中断；batcher/proposer/challenger 无异常。
+- 说明：builder 与 op-geth 选择的交易可以不同，block hash/gas 不同**不算**共识错误；只看 VALID 与否。
+
+### P3 — enabled + flashblocks 产出
+1. `FLASHBLOCKS_MODE=enabled` 重启。
+2. 正式块采用 op-rbuilder；订阅 flashblocks 流验证 ~250ms 产出（§8.2）。
+- **门**：builder 块稳定落链；flashblocks 连续；停掉 op-rbuilder 时能自动回退到 op-geth 出块（§8.3 演练）。
+
+### P4 — 用户面（完整链路，与生产同构）
+1. enabled 模式已自动拉起完整用户面：`ws-proxy(1113) → op-reth(8745) ← verifier op-node(9555)`。
+2. 先确认 op-reth 经其 verifier op-node 追平链头（`cast bn` on 8745 与 8645 一致）。
+3. 确认 op-reth 已连上 ws-proxy 收到 flashblocks（日志无 `Error receiving flashblock`）。
+4. 向 `L2_RPC_URL` 发交易，从 op-reth(8745) 查 `pending`，确认正式块前可见。
+- **门**：亚秒预确认稳定；关掉 ws-proxy/op-reth/verifier op-node 任一，均不影响 Sequencer 出块。
+
+### P5 — 本地验收
+- 跑一轮完整场景（功能 + FP 非回归 + 故障回退）并记录，形成本地验收结论。
+
+---
+
+## 8. 验证方法（具体脚本）
+
+### 8.1 逐块对照（op-geth vs op-rbuilder）
+```bash
+# 对照指定区块的 hash / stateRoot
+for BN in <granite> <holocene> <isthmus> <jovian> $(cast bn --rpc-url http://localhost:8645); do
+  A=$(cast block $BN --rpc-url http://localhost:8645 -j | jq -r '.hash,.stateRoot' | tr '\n' ' ')
+  B=$(cast block $BN --rpc-url http://localhost:8663 -j | jq -r '.hash,.stateRoot' | tr '\n' ' ')
+  [ "$A" = "$B" ] && echo "OK   $BN" || echo "DIFF $BN | geth=$A | rbuilder=$B"
+done
+```
+
+### 8.2 观察 flashblocks 流
+```bash
+# 订阅 rollup-boost 广播（或 ws-proxy），应约每 250ms 一条
+websocat ws://localhost:1112 | head -20
+# 或订阅对外 proxy
+websocat ws://localhost:1113 | head -20
+```
+
+### 8.3 pending 预确认验证
+```bash
+TX=$(cast send <to> --value 1 --rpc-url http://localhost:8645 --private-key <k> --async)
+# 立刻从 flashblocks RPC 查 pending，应在 2s 正式块前就能看到该 tx
+cast rpc eth_getBlockByNumber pending true --rpc-url http://localhost:8745 | jq '.transactions[].hash'
+```
+
+### 8.4 diverge 调试思路（dry_run 出现 Invalid payload 时）
+1. 从 rollup-boost 日志取出被判 invalid 的 block number。
+2. 用 §8.1 对照同高度 op-geth vs op-rbuilder 的 `stateRoot`。
+3. 缩小到"哪一笔交易 / 哪个字段"：优先怀疑
+   - Jovian `extraData` / `minBaseFee` 编码；
+   - CGT 相关预置合约（L1Block / GasPriceOracle）字节码或 gas 调整；
+   - Isthmus/Jovian 升级交易（type 0x7e）执行结果。
+4. 定位到具体差异后，判断是 op-rbuilder 版本不支持该分叉，还是 genesis/预置状态没对齐。
+
+---
+
+## 9. 回退（本地）
+
+| 层级 | 操作 | 结果 |
+|---|---|---|
+| builder 降级 | `FLASHBLOCKS_MODE=dry_run` 重启 | 正式块回到 op-geth，停用户面 flashblocks |
+| 绕过 sidecar | `FLASHBLOCKS_MODE=off` 重启 | op-node 直连 op-geth(8651)，架构回到接入前 |
+| 用户面单独关 | `SKIP_FB_USER=1` 或停 fb-proxy/fb-rpc/fb-opnode | canonical 链与 Sequencer 不受影响 |
+
+因为 op-node 的 `--l2` 目标由 `FLASHBLOCKS_MODE` 单点决定，回退只需改一个变量 + 重启，无需改动其它组件。
+
+---
+
+## 10. 风险与注意（本地阶段就要盯）
+
+1. **版本世代必须锁 Jovian**——最大风险。已锁定 rollup-boost v0.7.11 / op-rbuilder v0.2.13 / op-reth v1.9.3；
+   切勿混入 Karst 世代（0.4.x / 0.7.16 / 2.3.x），否则会引入 Engine API V5，与本链 op-node v1.16.x 不兼容。
+2. **CGT 兼容性无官方保证**——你的 CGT 在合约 + op-node，op-geth 是 stock；op-rbuilder(reth) 是否同样"透明兼容"必须靠 dry_run 的 VALID 结果实证，这正是 P2 的意义。
+3. **genesis 对齐**是一切对照的前提，P0 不过不要继续。
+4. **JWT 一致**：op-node / rollup-boost / op-geth / op-rbuilder / 以及 RPC 副本(op-reth+verifier op-node) 必须同一个 jwt 文件。
+5. **op-reth 的 `wss://` TLS**：部分 op-reth 构建未编 TLS，连 `wss://` 会报 `TLS support not compiled in`。
+   本地全程用 `ws://` 不受影响；将来生产若连 `wss://` 需用已修该问题的构建。
+6. flag/子命令名各仓库版本间会变，落地时以对应版本 `--help` 校准（本文给的是代表值）。
+
+---
+
+## 11. 交付物（本地验证）
+- 4 个 Rust 二进制 + 构建 commit 记录。
+- 创世/链参数一致性确认记录（P0）。
+- 影子对照报告（P1）。
+- dry_run VALID / Invalid payload 记录（P2）。
+- flashblocks 产出与 pending 预确认记录（P3/P4）。
+- 故障回退演练记录（P3）。
+- 本地验收结论（P5）。

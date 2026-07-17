@@ -118,7 +118,7 @@ If `USE_FAULT_PROOFS=true` and you plan to run challenger, also build/copy `op-c
 Run setup in remote mode:
 
 ```bash
-bash scripts/chain-setup.sh remote
+bash scripts/deploy-chain/chain-setup.sh remote
 ```
 
 This will:
@@ -202,7 +202,7 @@ jq '{genesis, chain_op_config}' "$DEPLOYMENT_CONFIG_PATH/rollup.json"
 Start L2 services in remote mode:
 
 ```bash
-bash scripts/chain-start.sh remote
+bash scripts/chain-ops/chain-start.sh remote
 ```
 
 This does not start or stop the remote L1. It only starts local L2 services using the generated config.
@@ -238,7 +238,7 @@ bash scripts/jovian/upgrade-systemconfig.sh <new_system_config_implementation>
 Then stop only L2:
 
 ```bash
-bash scripts/chain-stop.sh
+bash scripts/chain-ops/chain-stop.sh
 ```
 
 Do not stop the remote L1.
@@ -273,7 +273,7 @@ jq \
   && mv /tmp/rollup.json "$DEPLOYMENT_CONFIG_PATH/rollup.json"
 ```
 
-Write the same fork times into `scripts/chain-start.sh` for `op-geth`:
+Write the same fork times into `scripts/chain-ops/chain-start.sh` for `op-geth`:
 
 ```bash
 python3 - <<'PY'
@@ -312,7 +312,7 @@ PY
 Restart L2:
 
 ```bash
-bash scripts/chain-start.sh remote
+bash scripts/chain-ops/chain-start.sh remote
 ```
 
 ## 9. Verify Jovian Parameters
@@ -352,7 +352,7 @@ L1 config transactions are not reflected on L2 immediately. Wait for `op-node` t
 Stop local L2 services:
 
 ```bash
-bash scripts/chain-stop.sh
+bash scripts/chain-ops/chain-stop.sh
 ```
 
 This does not stop the remote L1.

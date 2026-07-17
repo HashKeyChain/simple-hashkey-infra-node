@@ -15,14 +15,14 @@
 #      注意：本脚本不重启 anvil、不重建 op-geth datadir，链从当前高度继续，分叉在目标时间激活。
 #
 # 用法:
-#   bash scripts/activate-fork.sh [local|remote]
+#   bash scripts/deploy-chain/activate-fork.sh [local|remote]
 #
 # 若不传参，根据 L1_RPC_URL 自动判断（含 localhost/127.0.0.1 视为 local）。
 #
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
-BASE_PATH=$(cd "$SCRIPT_DIR/.." && pwd)
+BASE_PATH=$(cd "$SCRIPT_DIR/../.." && pwd)
 cd "$BASE_PATH"
 
 source .envrc
@@ -38,7 +38,7 @@ if [ -z "$CHAIN_ENV" ]; then
   echo "Auto-detected CHAIN_ENV=$CHAIN_ENV (from L1_RPC_URL)"
 fi
 if [ "$CHAIN_ENV" != "local" ] && [ "$CHAIN_ENV" != "remote" ]; then
-  echo "Usage: bash scripts/activate-fork.sh [local|remote]"
+  echo "Usage: bash scripts/deploy-chain/activate-fork.sh [local|remote]"
   exit 1
 fi
 [ "$CHAIN_ENV" = "local" ] && export L1_RPC_URL="http://localhost:8545"
@@ -46,7 +46,7 @@ fi
 ROLLUP_FILE="$BASE_PATH/config/$DEPLOYMENT_CONTEXT/rollup.json"
 if [ ! -f "$ROLLUP_FILE" ]; then
   echo "Error: rollup.json 不存在: $ROLLUP_FILE" >&2
-  echo "       先运行 bash scripts/chain-setup.sh $CHAIN_ENV 生成配置。" >&2
+  echo "       先运行 bash scripts/deploy-chain/chain-setup.sh $CHAIN_ENV 生成配置。" >&2
   exit 1
 fi
 
@@ -84,7 +84,7 @@ echo ""
 
 # ---------- [1/3] 停 L2（保留 anvil / op-geth datadir）----------
 echo "[1/3] 停止 L2 组件..."
-bash "$SCRIPT_DIR/chain-stop.sh"
+bash "$BASE_PATH/scripts/chain-ops/chain-stop.sh"
 echo ""
 
 # ---------- [2/3] 同步 rollup.json 的 fork 时间（op-node 侧）----------
@@ -96,7 +96,7 @@ echo ""
 
 # ---------- [3/3] 重启 L2（op-geth 侧 override 由 run-op-geth.sh 现场组装）----------
 echo "[3/3] 重启 L2..."
-bash "$SCRIPT_DIR/chain-start.sh" "$CHAIN_ENV"
+bash "$BASE_PATH/scripts/chain-ops/chain-start.sh" "$CHAIN_ENV"
 
 echo ""
 echo "=== Fork 激活流程完成 ==="

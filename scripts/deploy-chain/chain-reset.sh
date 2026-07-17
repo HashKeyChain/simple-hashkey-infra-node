@@ -11,18 +11,18 @@
 #      留着旧地址会让 deploy-contracts 复用一个不存在的合约；清空后 setup 会重新部署并回填。
 #
 # 重置后重建：
-#   bash scripts/chain-setup.sh <env>   # 部署合约、生成配置、纯-fjord
-#   bash scripts/chain-start.sh <env>   # 启动全部服务
+#   bash scripts/deploy-chain/chain-setup.sh <env>   # 部署合约、生成配置、纯-fjord
+#   bash scripts/chain-ops/chain-start.sh <env>      # 启动全部服务
 #
 # 用法:
-#   bash scripts/chain-reset.sh [local|remote] [-y|--yes]
+#   bash scripts/deploy-chain/chain-reset.sh [local|remote] [-y|--yes]
 #     -y / --yes  跳过确认（默认会要求二次确认，因为不可逆）
 #   不传 env 时按 L1_RPC_URL 自动判断（含 localhost/127.0.0.1 视为 local）。
 #
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
-BASE_PATH=$(cd "$SCRIPT_DIR/.." && pwd)
+BASE_PATH=$(cd "$SCRIPT_DIR/../.." && pwd)
 cd "$BASE_PATH"
 
 source .envrc
@@ -34,7 +34,7 @@ for arg in "$@"; do
   case "$arg" in
     local|remote) CHAIN_ENV="$arg" ;;
     -y|--yes)     ASSUME_YES=1 ;;
-    *) echo "Usage: bash scripts/chain-reset.sh [local|remote] [-y|--yes]" >&2; exit 1 ;;
+    *) echo "Usage: bash scripts/deploy-chain/chain-reset.sh [local|remote] [-y|--yes]" >&2; exit 1 ;;
   esac
 done
 
@@ -96,7 +96,7 @@ fi
 # ---------- [1] 停 L2 ----------
 echo ""
 echo "[1] 停止 L2 组件..."
-bash "$SCRIPT_DIR/chain-stop.sh" || true
+bash "$BASE_PATH/scripts/chain-ops/chain-stop.sh" || true
 
 # ---------- [2] 停 anvil（仅 local）----------
 if [ "$CHAIN_ENV" = "local" ]; then
@@ -138,5 +138,5 @@ echo ""
 echo "=== Reset 完成 ==="
 echo "下一步重建新链："
 echo "  source .envrc"
-echo "  bash scripts/chain-setup.sh $CHAIN_ENV"
-echo "  bash scripts/chain-start.sh $CHAIN_ENV"
+echo "  bash scripts/deploy-chain/chain-setup.sh $CHAIN_ENV"
+echo "  bash scripts/chain-ops/chain-start.sh $CHAIN_ENV"

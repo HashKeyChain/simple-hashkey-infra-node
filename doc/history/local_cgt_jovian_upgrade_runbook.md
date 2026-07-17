@@ -2,6 +2,19 @@
 
 This runbook rebuilds a local Custom Gas Token OP Stack chain from scratch, starts L1/L2, activates Fjord through Jovian, bridges gas token to L2, and verifies Jovian fee behavior.
 
+> **Shortcut (deploy → Jovian in one command).** If you only need a fresh local chain
+> already advanced to Jovian (e.g. to set up Flashblocks), skip Steps 1–8 and run:
+>
+> ```bash
+> bash scripts/deploy-chain/deploy-jovian-chain.sh local --reset -y
+> ```
+>
+> It resets, deploys the fjord baseline, starts L2, auto-computes fork times (2s apart)
+> from the live L2 timestamp, restarts via `activate-fork.sh`, then waits for Jovian to
+> activate. Steps below remain the authoritative manual breakdown for fine control /
+> debugging, and Steps 9–10 (bridge + verify) still apply if you need a funded chain.
+> See `doc/chain-lifecycle.md` for the full script-directory layout.
+
 ## 1. Reset Local Environment
 
 This deletes the current local L2 data and local generated configs.
@@ -9,7 +22,7 @@ This deletes the current local L2 data and local generated configs.
 ```bash
 cd /Users/zhuangqianwei/github.com/HashKeyChain/simple-hashkey-infra-node
 
-bash scripts/chain-stop.sh || true
+bash scripts/chain-ops/chain-stop.sh || true
 docker stop anvil-chain 2>/dev/null || true
 
 rm -rf data/
@@ -71,7 +84,7 @@ source .envrc
 ## 3. Deploy L1 Contracts And Generate L2 Config
 
 ```bash
-bash scripts/chain-setup.sh local
+bash scripts/deploy-chain/chain-setup.sh local
 ```
 
 This should:
@@ -86,8 +99,8 @@ This should:
 
 ## 4. Patch `rollup.json` Compatibility
 
-> This step is now automated. `scripts/chain-setup.sh` calls
-> `scripts/patch-rollup-config.sh` right after deployment, so after Step 3 the
+> This step is now automated. `scripts/deploy-chain/chain-setup.sh` calls
+> `scripts/deploy-chain/patch-rollup-config.sh` right after deployment, so after Step 3 the
 > `rollup.json` is already patched and you can go straight to Step 5. The
 > commands below are kept for reference / manual re-run only.
 
@@ -103,7 +116,7 @@ The automated patch does three things (all idempotent):
 To run it manually (e.g. after rebuilding anvil without re-running setup):
 
 ```bash
-bash scripts/patch-rollup-config.sh local
+bash scripts/deploy-chain/patch-rollup-config.sh local
 ```
 
 For reference, the equivalent raw commands are:
@@ -151,7 +164,7 @@ done
 ## 5. Start L2 Services
 
 ```bash
-bash scripts/chain-start.sh local
+bash scripts/chain-ops/chain-start.sh local
 ```
 
 Verify L2 is producing blocks:
@@ -234,7 +247,7 @@ jq \
 ```
 
 Write the same fork times into `.envrc` as `OP_GETH_OVERRIDE_FLAGS`, so `op-geth` gets them
-through `scripts/run-op-geth.sh`（组件 flags 唯一真源，会 source .envrc 并追加该变量）：
+through `scripts/chain-ops/run-op-geth.sh`（组件 flags 唯一真源，会 source .envrc 并追加该变量）：
 
 ```bash
 export FJORD GRANITE HOLOCENE ISTHMUS JOVIAN
@@ -281,8 +294,8 @@ rg -- 'OP_GETH_OVERRIDE_FLAGS' .envrc
 Do not stop anvil here.
 
 ```bash
-bash scripts/chain-stop.sh
-bash scripts/chain-start.sh local
+bash scripts/chain-ops/chain-stop.sh
+bash scripts/chain-ops/chain-start.sh local
 ```
 
 ## 8. Watch Fork Activation

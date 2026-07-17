@@ -3,11 +3,11 @@
 # 停止由 chain-start.sh 启动的所有服务（op-challenger、op-proposer、op-batcher、op-node、op-geth）。
 # 若为本地环境且 anvil 由本仓库脚本启动，可手动停止: docker stop anvil-chain
 #
-# 用法: bash scripts/chain-stop.sh
+# 用法: bash scripts/chain-ops/chain-stop.sh
 #
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
-BASE_PATH=$(cd "$SCRIPT_DIR/.." && pwd)
+BASE_PATH=$(cd "$SCRIPT_DIR/../.." && pwd)
 PID_DIR="${BASE_PATH}/data/pids"
 DATA_DIR="${BASE_PATH}/data"
 OP_GETH_DATA_PATH="${DATA_DIR}/op-geth"

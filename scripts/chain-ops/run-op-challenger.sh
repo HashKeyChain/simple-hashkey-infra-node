@@ -9,14 +9,14 @@
 #      bin/cannon、bin/op-program、bin/prestate.json（可选 bin/prestate-proof.json 用于哈希校验）
 #
 # 用法:
-#   bash scripts/run-op-challenger.sh              # 前台运行（chain-start.sh 以此方式拉起）
-#   bash scripts/run-op-challenger.sh --background # 后台运行并写 pid/log
+#   bash scripts/chain-ops/run-op-challenger.sh              # 前台运行（chain-start.sh 以此方式拉起）
+#   bash scripts/chain-ops/run-op-challenger.sh --background # 后台运行并写 pid/log
 #
 
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
-BASE_PATH=$(cd "$SCRIPT_DIR/.." && pwd)
+BASE_PATH=$(cd "$SCRIPT_DIR/../.." && pwd)
 cd "$BASE_PATH"
 
 source .envrc
@@ -59,7 +59,7 @@ PRESTATE_PROOF="$BASE_PATH/bin/prestate-proof.json"
 
 # ---------- 预检：配置文件 ----------
 for f in "$ROLLUP_JSON" "$GENESIS_JSON" "$ARTIFACT_JSON"; do
-  [ -f "$f" ] || fail "缺少配置文件: ${f}（先执行 bash scripts/chain-setup.sh ${DEPLOYMENT_CONTEXT}）"
+  [ -f "$f" ] || fail "缺少配置文件: ${f}（先执行 bash scripts/deploy-chain/chain-setup.sh ${DEPLOYMENT_CONTEXT}）"
 done
 
 # ---------- 预检：二进制 ----------
@@ -94,7 +94,7 @@ fi
 
 # ---------- 预检：链是否在运行 ----------
 cast block-number --rpc-url "$L2_RPC_URL" >/dev/null 2>&1 \
-  || fail "L2 RPC 不可达: ${L2_RPC_URL}（先执行 bash scripts/chain-start.sh）"
+  || fail "L2 RPC 不可达: ${L2_RPC_URL}（先执行 bash scripts/chain-ops/chain-start.sh）"
 cast rpc optimism_syncStatus --rpc-url "$OP_NODE_RPC_URL" >/dev/null 2>&1 \
   || fail "op-node RPC 不可达: ${OP_NODE_RPC_URL}（op-node 未就绪）"
 

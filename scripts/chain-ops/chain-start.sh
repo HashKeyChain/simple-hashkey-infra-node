@@ -4,7 +4,7 @@
 # 需先执行 chain-setup.sh 生成 rollup.json 和 genesis.json。
 #
 # 用法:
-#   bash scripts/chain-start.sh [local|remote]
+#   bash scripts/chain-ops/chain-start.sh [local|remote]
 #
 # 参数:
 #   local  - 本地：若 L1 未运行则启动 anvil，再启动 op-geth / op-node / batcher / proposer
@@ -21,7 +21,7 @@
 set -e
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
-BASE_PATH=$(cd "$SCRIPT_DIR/.." && pwd)
+BASE_PATH=$(cd "$SCRIPT_DIR/../.." && pwd)
 cd "$BASE_PATH"
 
 source .envrc
@@ -44,7 +44,7 @@ if [ -z "$CHAIN_ENV" ]; then
 fi
 
 if [ "$CHAIN_ENV" != "local" ] && [ "$CHAIN_ENV" != "remote" ]; then
-  echo "Usage: bash scripts/chain-start.sh [local|remote]"
+  echo "Usage: bash scripts/chain-ops/chain-start.sh [local|remote]"
   exit 1
 fi
 
@@ -62,7 +62,7 @@ export DEPLOYMENT_OUTFILE="$DEPLOYMENT_CONFIG_PATH/artifact.json"
 
 # 检查必要配置是否已生成
 if [ ! -f "$OP_NODE_ROLLUP_FILE" ] || [ ! -f "$OP_GETH_GENESIS_FILE" ]; then
-  echo "Error: rollup.json or genesis.json not found. Run first: bash scripts/chain-setup.sh $CHAIN_ENV"
+  echo "Error: rollup.json or genesis.json not found. Run first: bash scripts/deploy-chain/chain-setup.sh $CHAIN_ENV"
   echo "  OP_NODE_ROLLUP_FILE=$OP_NODE_ROLLUP_FILE"
   echo "  OP_GETH_GENESIS_FILE=$OP_GETH_GENESIS_FILE"
   exit 1
@@ -119,7 +119,7 @@ export _CALLER_SAFEDB_PATH="$SAFEDB_PATH"
 
 # 硬分叉时间覆盖：op-geth 的 --override.* 由 run-op-geth.sh 从 .envrc 的 FORK_*_TIME
 # 现场组装；rollup.json 的 *_time 由 patch-rollup-config.sh 同源写入。启动新分叉用
-# scripts/activate-fork.sh（改 .envrc 时间戳后自动停链/同步 rollup/重启）。
+# scripts/deploy-chain/activate-fork.sh（改 .envrc 时间戳后自动停链/同步 rollup/重启）。
 
 # ---------- 启动 op-geth（组件 flags 见 run-op-geth.sh）----------
 echo "Starting op-geth..."
@@ -181,4 +181,4 @@ echo "  Rollup RPC:  $OP_NODE_RPC_URL"
 echo "  PIDs:        $PID_DIR/*.pid"
 echo "  Logs:        $LOG_DIR/*.log"
 echo ""
-echo "Stop all: bash scripts/chain-stop.sh"
+echo "Stop all: bash scripts/chain-ops/chain-stop.sh"
