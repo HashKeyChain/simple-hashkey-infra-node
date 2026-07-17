@@ -16,6 +16,8 @@ BASE_PATH=$(cd "$SCRIPT_DIR/../.." && pwd)
 cd "$BASE_PATH"
 
 source .envrc
+# jovian 升级作用域配置（CONTRACTS_UPGRADE_REF 等），存在才 source
+[ -f scripts/jovian/upgrade.env ] && source scripts/jovian/upgrade.env
 
 CONTRACTS_REF="${1:-${CONTRACTS_UPGRADE_REF:-cgt-jovian/contracts-v2.0.0-beta.3}}"
 SYSTEM_CONFIG_DEPLOY_PRIVATE_KEY="${SYSTEM_CONFIG_DEPLOY_PRIVATE_KEY:-$GS_ADMIN_PRIVATE_KEY}"

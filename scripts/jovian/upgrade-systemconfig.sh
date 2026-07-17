@@ -14,6 +14,7 @@ BASE_PATH=$(cd "$SCRIPT_DIR/../.." && pwd)
 cd "$BASE_PATH"
 
 source .envrc
+[ -f scripts/jovian/upgrade.env ] && source scripts/jovian/upgrade.env
 
 NEW_SYSTEM_CONFIG="${1:-}"
 UPGRADE_PRIVATE_KEY="${UPGRADE_PRIVATE_KEY:-$GS_ADMIN_PRIVATE_KEY}"

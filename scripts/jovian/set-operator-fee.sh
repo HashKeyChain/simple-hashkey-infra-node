@@ -18,6 +18,7 @@ BASE_PATH=$(cd "$SCRIPT_DIR/../.." && pwd)
 cd "$BASE_PATH"
 
 source .envrc
+[ -f scripts/jovian/upgrade.env ] && source scripts/jovian/upgrade.env
 
 OPERATOR_FEE_SCALAR="${1:-${OPERATOR_FEE_SCALAR:-1}}"
 OPERATOR_FEE_CONSTANT="${2:-${OPERATOR_FEE_CONSTANT:-1000000}}"

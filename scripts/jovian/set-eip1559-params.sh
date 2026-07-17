@@ -18,6 +18,7 @@ BASE_PATH=$(cd "$SCRIPT_DIR/../.." && pwd)
 cd "$BASE_PATH"
 
 source .envrc
+[ -f scripts/jovian/upgrade.env ] && source scripts/jovian/upgrade.env
 
 L2_RPC="${L2_RPC_URL:-http://localhost:8645}"
 EIP1559_DENOMINATOR="${1:-${EIP1559_DENOMINATOR:-250}}"

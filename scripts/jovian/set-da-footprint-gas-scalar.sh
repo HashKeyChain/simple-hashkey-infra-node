@@ -17,6 +17,7 @@ BASE_PATH=$(cd "$SCRIPT_DIR/../.." && pwd)
 cd "$BASE_PATH"
 
 source .envrc
+[ -f scripts/jovian/upgrade.env ] && source scripts/jovian/upgrade.env
 
 L2_RPC="${L2_RPC_URL:-http://localhost:8645}"
 DA_FOOTPRINT_GAS_SCALAR="${1:-${DA_FOOTPRINT_GAS_SCALAR:-400}}"

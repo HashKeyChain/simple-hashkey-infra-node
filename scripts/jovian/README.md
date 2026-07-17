@@ -142,8 +142,8 @@ bash scripts/jovian/deploy-systemconfig.sh [contracts_ref]
 
 作用：
 
-- 切到指定 contracts 分支；默认读取 `.envrc` 的 `CONTRACTS_UPGRADE_REF`。
-- 如果命令行传入 `[contracts_ref]`，则临时覆盖 `CONTRACTS_UPGRADE_REF`。
+- 切到指定 contracts 分支；默认读取 `scripts/jovian/upgrade.env` 的 `CONTRACTS_UPGRADE_REF`（已从全局 `.envrc` 移出）；该文件不存在时用脚本内置默认值兜底。
+- 如果命令行传入 `[contracts_ref]`，则临时覆盖 `CONTRACTS_UPGRADE_REF`（优先级：命令行 > upgrade.env > 脚本默认）。
 - 编译合约并部署新的 `SystemConfig` implementation。
 - 只部署 implementation，不升级 proxy，不修改 `artifact.json`。
 
