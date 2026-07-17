@@ -4,3 +4,12 @@
 [submodule "op-geth"]
 	path = op-geth
 	url = https://github.com/ethereum-optimism/op-geth.git
+[submodule "rollup-boost"]
+	path = rollup-boost
+	url = https://github.com/HSKChain/rollup-boost.git
+[submodule "op-rbuilder"]
+	path = op-rbuilder
+	url = https://github.com/HSKChain/op-rbuilder.git
+[submodule "reth"]
+	path = reth
+	url = https://github.com/HSKChain/reth.git
