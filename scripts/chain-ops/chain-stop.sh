@@ -7,7 +7,7 @@
 #
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
-BASE_PATH=$(cd "$SCRIPT_DIR/.." && pwd)
+BASE_PATH=$(cd "$SCRIPT_DIR/../.." && pwd)
 PID_DIR="${BASE_PATH}/data/pids"
 DATA_DIR="${BASE_PATH}/data"
 OP_GETH_DATA_PATH="${DATA_DIR}/op-geth"

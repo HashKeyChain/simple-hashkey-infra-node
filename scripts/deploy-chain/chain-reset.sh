@@ -22,7 +22,7 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
-BASE_PATH=$(cd "$SCRIPT_DIR/.." && pwd)
+BASE_PATH=$(cd "$SCRIPT_DIR/../.." && pwd)
 cd "$BASE_PATH"
 
 source .envrc
@@ -96,7 +96,7 @@ fi
 # ---------- [1] 停 L2 ----------
 echo ""
 echo "[1] 停止 L2 组件..."
-bash "$SCRIPT_DIR/chain-stop.sh" || true
+bash "$BASE_PATH/scripts/chain-ops/chain-stop.sh" || true
 
 # ---------- [2] 停 anvil（仅 local）----------
 if [ "$CHAIN_ENV" = "local" ]; then

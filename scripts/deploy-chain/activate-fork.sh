@@ -22,7 +22,7 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
-BASE_PATH=$(cd "$SCRIPT_DIR/.." && pwd)
+BASE_PATH=$(cd "$SCRIPT_DIR/../.." && pwd)
 cd "$BASE_PATH"
 
 source .envrc
@@ -84,7 +84,7 @@ echo ""
 
 # ---------- [1/3] 停 L2（保留 anvil / op-geth datadir）----------
 echo "[1/3] 停止 L2 组件..."
-bash "$SCRIPT_DIR/chain-stop.sh"
+bash "$BASE_PATH/scripts/chain-ops/chain-stop.sh"
 echo ""
 
 # ---------- [2/3] 同步 rollup.json 的 fork 时间（op-node 侧）----------
@@ -96,7 +96,7 @@ echo ""
 
 # ---------- [3/3] 重启 L2（op-geth 侧 override 由 run-op-geth.sh 现场组装）----------
 echo "[3/3] 重启 L2..."
-bash "$SCRIPT_DIR/chain-start.sh" "$CHAIN_ENV"
+bash "$BASE_PATH/scripts/chain-ops/chain-start.sh" "$CHAIN_ENV"
 
 echo ""
 echo "=== Fork 激活流程完成 ==="

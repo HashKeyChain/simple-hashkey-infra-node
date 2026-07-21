@@ -9,7 +9,7 @@ This deletes the current local L2 data and local generated configs.
 ```bash
 cd /Users/zhuangqianwei/github.com/HashKeyChain/simple-hashkey-infra-node
 
-bash scripts/chain-stop.sh || true
+bash scripts/chain-ops/chain-stop.sh || true
 docker stop anvil-chain 2>/dev/null || true
 
 rm -rf data/
@@ -71,7 +71,7 @@ source .envrc
 ## 3. Deploy L1 Contracts And Generate L2 Config
 
 ```bash
-bash scripts/chain-setup.sh local
+bash scripts/deploy-chain/chain-setup.sh local
 ```
 
 This should:
@@ -86,8 +86,8 @@ This should:
 
 ## 4. Patch `rollup.json` Compatibility
 
-> This step is now automated. `scripts/chain-setup.sh` calls
-> `scripts/patch-rollup-config.sh` right after deployment, so after Step 3 the
+> This step is now automated. `scripts/deploy-chain/chain-setup.sh` calls
+> `scripts/deploy-chain/patch-rollup-config.sh` right after deployment, so after Step 3 the
 > `rollup.json` is already patched and you can go straight to Step 5. The
 > commands below are kept for reference / manual re-run only.
 
@@ -103,7 +103,7 @@ The automated patch does three things (all idempotent):
 To run it manually (e.g. after rebuilding anvil without re-running setup):
 
 ```bash
-bash scripts/patch-rollup-config.sh local
+bash scripts/deploy-chain/patch-rollup-config.sh local
 ```
 
 For reference, the equivalent raw commands are:
@@ -151,7 +151,7 @@ done
 ## 5. Start L2 Services
 
 ```bash
-bash scripts/chain-start.sh local
+bash scripts/chain-ops/chain-start.sh local
 ```
 
 Verify L2 is producing blocks:
@@ -234,7 +234,7 @@ jq \
 ```
 
 Write the same fork times into `.envrc` as `OP_GETH_OVERRIDE_FLAGS`, so `op-geth` gets them
-through `scripts/run-op-geth.sh`（组件 flags 唯一真源，会 source .envrc 并追加该变量）：
+through `scripts/chain-ops/run-op-geth.sh`（组件 flags 唯一真源，会 source .envrc 并追加该变量）：
 
 ```bash
 export FJORD GRANITE HOLOCENE ISTHMUS JOVIAN
@@ -281,8 +281,8 @@ rg -- 'OP_GETH_OVERRIDE_FLAGS' .envrc
 Do not stop anvil here.
 
 ```bash
-bash scripts/chain-stop.sh
-bash scripts/chain-start.sh local
+bash scripts/chain-ops/chain-stop.sh
+bash scripts/chain-ops/chain-start.sh local
 ```
 
 ## 8. Watch Fork Activation
