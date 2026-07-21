@@ -8,7 +8,7 @@
 # 两者对 rollup.json 的字段要求不一致，需要下面的兼容性修正。
 #
 # 用法:
-#   bash scripts/deploy-chain/patch-rollup-config.sh [local|remote]
+#   bash scripts/patch-rollup-config.sh [local|remote]
 #
 # 参数:
 #   local  - 额外用当前 anvil 刷新 genesis.l1.hash（anvil 每次重建 hash 都变）
@@ -19,7 +19,7 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
-BASE_PATH=$(cd "$SCRIPT_DIR/../.." && pwd)
+BASE_PATH=$(cd "$SCRIPT_DIR/.." && pwd)
 cd "$BASE_PATH"
 
 # 若由 chain-setup 调用且已设置，不要被 .envrc 覆盖
@@ -42,14 +42,14 @@ if [ -z "$CHAIN_ENV" ]; then
 fi
 
 if [ "$CHAIN_ENV" != "local" ] && [ "$CHAIN_ENV" != "remote" ]; then
-  echo "Usage: bash scripts/deploy-chain/patch-rollup-config.sh [local|remote]"
+  echo "Usage: bash scripts/patch-rollup-config.sh [local|remote]"
   exit 1
 fi
 
 ROLLUP_FILE="$DEPLOYMENT_CONFIG_PATH/rollup.json"
 if [ ! -f "$ROLLUP_FILE" ]; then
   echo "Error: rollup.json not found at $ROLLUP_FILE" >&2
-  echo "       先运行 bash scripts/deploy-chain/chain-setup.sh $CHAIN_ENV 生成配置。" >&2
+  echo "       先运行 bash scripts/chain-setup.sh $CHAIN_ENV 生成配置。" >&2
   exit 1
 fi
 

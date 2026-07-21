@@ -63,30 +63,24 @@ export OP_BATCHER_RPC_URL=http://localhost:$OP_BATCHER_PORT
 # op-geth version (from ethereum-optimism/op-geth releases)
 export OP_GETH_REF=v1.101605.0
 
-# op-node version: local cgt-jovian/v1.16.5 branch.
-# Includes the L1Block/GasPriceOracle bytecode replacements in the Isthmus/Jovian
-# upgrade transactions plus related gas adjustments (op-node is the only modified component).
+# op-node version: local CGT Jovian branch.
+# It includes Isthmus/Jovian upgrade transaction bytecode replacements for
+# L1Block/GasPriceOracle and related gas adjustments.
 export OP_NODE_REF=cgt-jovian/v1.16.5
 
-# op-batcher version (official tag paired with op-node/v1.16.5; batcher code is unmodified).
+# op-batcher version
 export OP_BATCHER_REF=op-batcher/v1.16.3
 
-# op-proposer version (official tag paired with op-node/v1.16.5; proposer code is unmodified).
+# op-proposer version
 export OP_PROPOSER_REF=op-proposer/v1.10.0
 
-# op-challenger version: use cgt-jovian/v1.16.5 (same branch and Prague-aware op-geth
-# v1.101605 as op-node). Rationale: op-challenger uses its embedded geth to parse and
-# recompute L1 block header hashes; the beta.3 op-geth (2024-08, pre-Prague) does not
-# recognize the EIP-7685 requestsHash and computes a header hash inconsistent with the
-# real L1, so hash-based eth_call fails with "Resource not found" (game/preimage batch
-# reads all fail). A real L1 always runs the latest version and cannot be downgraded, so
-# the challenger must use a build that recognizes the latest header format.
-# Note: cannon/op-program stay at beta.3 (see below) to match the deployed MIPS / absolute
-# prestate; the challenger can load games and resolve/claim bonds, but active challenging
-# is still limited by the prestate mismatch.
+# op-challenger version: use cgt-jovian/v1.16.5 (same branch / Prague-aware op-geth
+# as op-node). A pre-Prague op-geth would miscompute L1 header hashes (EIP-7685
+# requestsHash) and break hash-based eth_call against a live L1.
 export OP_CHALLENGER_REF=cgt-jovian/v1.16.5
 
 # op-program version (for fault proofs)
+# Kept at beta.3 to stay compatible with the deployed MIPS / absolute prestate.
 export OP_PROGRAM_REF=op-contracts/v2.0.0-beta.3
 
 # cannon version (for fault proofs)
@@ -95,13 +89,15 @@ export CANNON_REF=op-contracts/v2.0.0-beta.3
 # contracts-bedrock version
 export OP_CONTRACTS_REF=op-contracts/v2.0.0-beta.3
 
+# Contracts branch/ref used for contract upgrades
+export CONTRACTS_UPGRADE_REF=cgt-jovian/contracts-v2.0.0-beta.3
+
 # Go toolchain:
-#  - op-node (optimism monorepo) go.mod requires go 1.21, but go 1.23+ is incompatible
-#    with fjl/memsize v0.0.2 (link: invalid reference to runtime.stopTheWorld), so it must
-#    be built with go 1.22;
-#  - op-geth v1.101605.0 go.mod requires go 1.24, which is newer.
-#  Use "go1.22.12+auto": minimum 1.22.12 (satisfies op-node, avoids memsize) and
-#  auto-upgrades when a go.mod requires newer (op-geth uses 1.24).
+#  - op-node(optimism monorepo) go.mod requires go 1.21, but go 1.23+
+#    is incompatible with fjl/memsize v0.0.2 (link: invalid reference to runtime.stopTheWorld),
+#    so use go 1.22 for op-node.
+#  - op-geth v1.101605.0 go.mod requires go 1.24.
+#  Use "go1.22.12+auto": minimum 1.22.12, auto-upgrade when go.mod requires newer.
 export GOTOOLCHAIN=go1.22.12+auto
 
 ##################################################
@@ -115,6 +111,12 @@ export IMPL_SALT=$(openssl rand -hex 32)
 # Name for the deployed network
 export DEPLOYMENT_CONTEXT=local-mainnet
 
+# Optional Tenderly details for simulation link during deployment
+export TENDERLY_PROJECT=
+export TENDERLY_USERNAME=
+
+# Optional Etherscan API key for contract verification
+export ETHERSCAN_API_KEY=
 
 # Private key to use for contract deployments, you don't need to worry about
 # this for the Getting Started guide.
@@ -143,7 +145,8 @@ export OP_NODE_ROLLUP_FILE=$CONTRACTS_BEDROCK_PATH/deployments/rollup.json
 
 # custom gas token. Fields: useCustomGasToken, customGasTokenAddress
 export USE_CUSTOM_GAS_TOKEN=true
-# Leave empty -> deploy-contracts.sh deploys a fresh CGT on the new anvil and fills the address.
+# Leave empty to let deploy-contracts.sh deploy a fresh CGT and fill the address.
+# Set this only when reusing a token that already exists on the current L1.
 export CUSTOM_GAS_TOKEN_ADDRESS=
 
 # Choice to use L2OutputOracle or FaultDisputeGame, false: L2OutputOracle, true: FaultDisputeGame. Field: useFaultProofs
@@ -152,25 +155,23 @@ export USE_FAULT_PROOFS=true
 # Dispute game type (only used when USE_FAULT_PROOFS=true):
 #   0 = CANNON (permissionless, anyone can propose/challenge)
 #   1 = PERMISSIONED_CANNON (permissioned, only authorized proposer/challenger)
-# New chains start permissioned per official production practice: Portal.respectedGameType
-# at deploy time, the proposer's --game-type and the anchor init script all follow this variable.
+# New chains start permissioned per official production practice: Portal.respectedGameType,
+# the proposer's --game-type and the anchor init script all follow this variable.
 export GAME_TYPE=1
 export RESPECTED_GAME_TYPE=$GAME_TYPE
 
-
 # ===== Hardfork activation times (single source of truth) =====
-# Configure once here. These FORK_*_TIME values are the single source of truth for fork
-# activation; both consumers derive from them:
-#   - rollup.json *_time: written by scripts/deploy-chain/patch-rollup-config.sh (read by op-node)
-#   - op-geth --override.*: assembled at startup by scripts/chain-ops/run-op-geth.sh (read by op-geth)
-# Values are unix seconds; 0 means active at genesis; empty means the fork is not started
-# (rollup.json set to null, no op-geth override).
+# Configure once here. These FORK_*_TIME values are the single source of truth for
+# fork activation; both consumers derive from them:
+#   - rollup.json *_time: written by scripts/patch-rollup-config.sh (read by op-node)
+#   - op-geth --override.*: assembled at startup by scripts/run-op-geth.sh (read by op-geth)
+# Values are unix seconds; 0 means active at genesis; empty means the fork is not
+# started (rollup.json set to null, no op-geth override).
 #
-# A freshly set-up chain starts only from fjord: fjord=0 (active at genesis), the other 4
-# forks left empty. To activate a new fork later: set the target timestamp here, then run
-# scripts/deploy-chain/activate-fork.sh (auto stops the chain, syncs rollup.json, restarts
-# L2 with the new params). For one-shot deploy to Jovian see doc/chain-lifecycle.md and
-# scripts/deploy-chain/deploy-jovian-chain.sh; for SystemConfig parameter ops see scripts/jovian.
+# A freshly set-up chain starts only from fjord: fjord=0 (active at genesis), the
+# other 4 forks left empty. To activate a new fork later: set the target timestamp
+# here, then run scripts/activate-fork.sh (auto stops the chain, syncs rollup.json,
+# restarts L2 with the new params). See scripts/jovian, doc/*upgrade_runbook.md.
 export FORK_FJORD_TIME=0
 export FORK_GRANITE_TIME=
 export FORK_HOLOCENE_TIME=

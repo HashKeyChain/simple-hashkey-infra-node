@@ -11,8 +11,8 @@ cd /Users/zhuangqianwei/github.com/HashKeyChain/simple-hashkey-infra-node
 执行这些脚本前，需要先完成本地链初始化和启动：
 
 ```bash
-bash scripts/deploy-chain/chain-setup.sh local
-bash scripts/chain-ops/chain-start.sh
+bash scripts/chain-setup.sh local
+bash scripts/chain-start.sh
 ```
 
 确认 `.envrc` 中至少有这些变量：
@@ -39,7 +39,7 @@ bash scripts/jovian/deploy-systemconfig.sh
 bash scripts/jovian/upgrade-systemconfig.sh <new_system_config_implementation>
 
 # 3. 停止 L2 服务；不要停止 Anvil/L1
-bash scripts/chain-ops/chain-stop.sh
+bash scripts/chain-stop.sh
 
 # 4. 配置分叉时间
 source .envrc
@@ -66,7 +66,7 @@ jq \
   && mv /tmp/rollup.json "$DEPLOYMENT_CONFIG_PATH/rollup.json"
 
 # 5. 从 rollup.json 读取 fork 时间，写入 .envrc 的 OP_GETH_OVERRIDE_FLAGS。
-#    op-geth 的启动参数已收敛到 scripts/chain-ops/run-op-geth.sh（唯一真源），它会 source .envrc
+#    op-geth 的启动参数已收敛到 scripts/run-op-geth.sh（唯一真源），它会 source .envrc
 #    并把 OP_GETH_OVERRIDE_FLAGS 追加到 op-geth flags 末尾；chain-start.sh 编排调用它即可生效。
 python3 - <<'PY'
 import json
@@ -101,7 +101,7 @@ print("Updated .envrc OP_GETH_OVERRIDE_FLAGS:", override)
 PY
 
 # 6. 重启 L2 服务
-bash scripts/chain-ops/chain-start.sh local
+bash scripts/chain-start.sh local
 
 # 7. 查询当前 L1/L2 参数状态
 bash scripts/jovian/query-systemconfig-params.sh
@@ -142,8 +142,8 @@ bash scripts/jovian/deploy-systemconfig.sh [contracts_ref]
 
 作用：
 
-- 切到指定 contracts 分支；默认读取 `scripts/jovian/upgrade.env` 的 `CONTRACTS_UPGRADE_REF`（已从全局 `.envrc` 移出）；该文件不存在时用脚本内置默认值兜底。
-- 如果命令行传入 `[contracts_ref]`，则临时覆盖 `CONTRACTS_UPGRADE_REF`（优先级：命令行 > upgrade.env > 脚本默认）。
+- 切到指定 contracts 分支；默认读取 `.envrc` 的 `CONTRACTS_UPGRADE_REF`。
+- 如果命令行传入 `[contracts_ref]`，则临时覆盖 `CONTRACTS_UPGRADE_REF`。
 - 编译合约并部署新的 `SystemConfig` implementation。
 - 只部署 implementation，不升级 proxy，不修改 `artifact.json`。
 

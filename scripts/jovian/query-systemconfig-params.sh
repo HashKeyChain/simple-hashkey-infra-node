@@ -12,7 +12,6 @@ BASE_PATH=$(cd "$SCRIPT_DIR/../.." && pwd)
 cd "$BASE_PATH"
 
 source .envrc
-[ -f scripts/jovian/upgrade.env ] && source scripts/jovian/upgrade.env
 
 ARTIFACT_FILE="${DEPLOYMENT_CONFIG_PATH:-$BASE_PATH/config/local}/artifact.json"
 if [ ! -f "$ARTIFACT_FILE" ]; then

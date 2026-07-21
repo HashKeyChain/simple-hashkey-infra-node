@@ -14,12 +14,12 @@
 # 幂等：Multicall3 已存在则跳过。仅用于本地 anvil（真实链上 Multicall3 早已部署，无需运行）。
 #
 # 用法:
-#   bash scripts/deploy-chain/deploy-multicall3.sh
+#   bash scripts/deploy-multicall3.sh
 #
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
-BASE_PATH=$(cd "$SCRIPT_DIR/../.." && pwd)
+BASE_PATH=$(cd "$SCRIPT_DIR/.." && pwd)
 cd "$BASE_PATH"
 
 # 若由 chain-setup 调用且已设置，不要被 .envrc 覆盖（local 用 localhost L1）。
