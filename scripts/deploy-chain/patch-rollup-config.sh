@@ -83,33 +83,17 @@ jq 'del(.da_challenge_contract_address)' \
   "$ROLLUP_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$ROLLUP_FILE"
 echo "  [2/3] da_challenge_contract_address 已移除"
 
-# ---------- [3/4] 确保 chain_op_config 存在 ----------
+# ---------- [3/3] 确保 chain_op_config 存在 ----------
 # 运行时 op-node 需要 EIP-1559 参数；缺失会导致启动异常。值与本链一致。
 jq '.chain_op_config = {
   "eip1559Elasticity": 6,
   "eip1559Denominator": 50,
   "eip1559DenominatorCanyon": 250
 }' "$ROLLUP_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$ROLLUP_FILE"
-echo "  [3/4] chain_op_config 已确保"
+echo "  [3/3] chain_op_config 已确保"
 
-# ---------- [4/4] fork 激活时间：从 .envrc 单一真源同步到 rollup.json ----------
-# op-geth 的 --override.* 与 rollup.json 的 *_time 必须一致，两者都从 .envrc 的
-# FORK_*_TIME 派生（geth 侧见 OP_GETH_OVERRIDE_FLAGS）。此处把同一批值写进 rollup.json：
-# 变量非空 → 写入该时间戳；变量为空 → 置 null（表示该 fork 未调度）。
-sync_fork() {  # $1=rollup.json 里的 fork 名  $2=对应 FORK_*_TIME 值
-  local key="$1" val="$2"
-  if [ -n "$val" ]; then
-    jq --argjson t "$val" ".${key}_time = \$t" "$ROLLUP_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$ROLLUP_FILE"
-  else
-    jq ".${key}_time = null" "$ROLLUP_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$ROLLUP_FILE"
-  fi
-  echo "      ${key}_time = ${val:-null}"
-}
-echo "  [4/4] 同步 fork 激活时间（来源：.envrc FORK_*_TIME）"
-sync_fork fjord    "${FORK_FJORD_TIME:-}"
-sync_fork granite  "${FORK_GRANITE_TIME:-}"
-sync_fork holocene "${FORK_HOLOCENE_TIME:-}"
-sync_fork isthmus  "${FORK_ISTHMUS_TIME:-}"
-sync_fork jovian   "${FORK_JOVIAN_TIME:-}"
+# 注意：本脚本只做"新部署的 rollup.json 运行时兼容修正"，不配置任何分叉时间。
+# 部署工具产出的是纯 fjord 基线；granite..jovian 的调度（写 rollup.json 的 *_time 与
+# 烘入 genesis.json 的 config.*Time）统一由 scripts/deploy-chain/activate-fork.sh 负责。
 
 echo "=== Patch complete ==="

@@ -72,7 +72,7 @@ for i in "${!ALL_FORKS[@]}"; do
   [ "${ALL_FORKS[$i]}" = "$TARGET" ] && TARGET_IDX=$i
 done
 if [ "$TARGET_IDX" -lt 0 ]; then
-  echo "Error: --target 非法：$TARGET（可选 ${ALL_FORKS[*]}）" >&2
+  echo "Error: --target 非法：${TARGET}（可选 ${ALL_FORKS[*]}）" >&2
   exit 1
 fi
 

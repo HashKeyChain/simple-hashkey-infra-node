@@ -4,10 +4,6 @@
 描述"做什么、为什么、验证到什么程度才算通过"，不涉及具体仓库改动。
 执行顺序：**私网逐阶段验证 → 生产灰度上线**，每阶段设明确验证门。
 
-> 本地私网验证的基座链用一键脚本产出（部署即到 Jovian）：
-> `bash scripts/deploy-chain/deploy-jovian-chain.sh local --reset -y`，详见 `README.md` /
-> `doc/chain-lifecycle.md`；本地接入的落地步骤见 `doc/flashblocks_local_impl.md`。
-
 ---
 
 ## 一、目标与前提结论
@@ -89,6 +85,11 @@ rollup-boost（新增：Engine API 代理 + 校验 + flashblocks 广播；三档
   `crates/infra/websocket-proxy`（协议一致，可平替）。
 - **追赶 Karst**（op-reth v2.3.3 / rollup-boost v0.7.16 / op-rbuilder v0.4.9，从 OP monorepo 统一取）
   为**后续独立事项**，本方案不纳入。
+- **交付形态已定**：三个 fork（`HSKChain/rollup-boost`、`HSKChain/op-rbuilder`、`HSKChain/reth`）
+  以 **git submodule** 加入基础设施仓库，锁 tag、从源码自编（本地/生产同一套构建）。
+- **模式切换已定**：`FLASHBLOCKS_MODE` 作启动初值（off/dry_run/enabled）；运行中 dry-run↔enabled
+  用 rollup-boost `debug set-execution-mode` 热切、不断链；硬回退用改初值 + 重启。本地验证细节见
+  `doc/flashblocks_local_impl.md`。
 
 > op-reth 版本注：官方 Jovian 表中普通节点用 v1.9.2，**跑 flashblocks 的链用 v1.9.3**。
 

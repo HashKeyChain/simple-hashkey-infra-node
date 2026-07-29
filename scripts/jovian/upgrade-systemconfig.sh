@@ -30,7 +30,7 @@ fi
 ARTIFACT_FILE="${DEPLOYMENT_CONFIG_PATH:-$BASE_PATH/config/local}/artifact.json"
 if [ ! -f "$ARTIFACT_FILE" ]; then
   echo "ERROR: artifact.json not found: $ARTIFACT_FILE"
-  echo "Run chain setup first: bash scripts/chain-setup.sh local"
+  echo "Run chain setup first: bash scripts/deploy-chain/chain-setup.sh local"
   exit 1
 fi
 

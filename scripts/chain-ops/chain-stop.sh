@@ -61,6 +61,10 @@ stop_matching_processes() {
   done < <(ps axww -o pid= -o command=)
 }
 
+# flashblocks 组件先停（与启动顺序相反）；编排见 scripts/flashblocks/stop-flashblocks.sh
+# （source 进来复用上面的 stop_pid / stop_matching_processes 及 PID_DIR / DATA_DIR）。
+source "$BASE_PATH/scripts/flashblocks/stop-flashblocks.sh"
+
 # First stop the processes recorded by the latest chain-start.sh run.
 for name in op-challenger op-proposer op-batcher op-node op-geth; do
   pid_file="$PID_DIR/${name}.pid"
@@ -77,6 +81,7 @@ stop_matching_processes "op-challenger" "op-challenger " "--datadir=$OP_CHALLENG
 stop_matching_processes "op-proposer" "op-proposer " "--rollup-rpc=$OP_NODE_RPC_URL" "--rpc.port=8560"
 stop_matching_processes "op-batcher" "op-batcher " "--rollup-rpc=$OP_NODE_RPC_URL" "--rpc.port=$OP_BATCHER_PORT"
 stop_matching_processes "op-node" "op-node " "--safedb.path=$OP_NODE_SAFEDB_PATH"
+
 stop_matching_processes "op-geth" "op-geth " "--datadir=$OP_GETH_DATA_PATH"
 
 echo "Done. To stop anvil (if started by chain-setup or chain-start): docker stop anvil-chain"

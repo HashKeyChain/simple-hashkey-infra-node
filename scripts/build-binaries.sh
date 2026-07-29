@@ -84,5 +84,10 @@ if [ "$(uname)" = "Darwin" ] && command -v codesign >/dev/null 2>&1; then
   echo "Re-signed binaries (adhoc) for macOS."
 fi
 
+# ---------- flashblocks Rust 组件（仅 FLASHBLOCKS_MODE != off）----------
+if [ "${FLASHBLOCKS_MODE:-off}" != "off" ]; then
+  bash "$BASE_PATH/scripts/flashblocks/build-flashblocks.sh"
+fi
+
 # return base path
 cd $BASE_PATH

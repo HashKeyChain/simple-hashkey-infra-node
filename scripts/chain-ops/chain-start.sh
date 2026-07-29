@@ -77,6 +77,13 @@ echo ""
 if [ "$CHAIN_ENV" = "local" ]; then
   if ! cast block latest --rpc-url "$L1_RPC_URL" &>/dev/null; then
     echo "Starting anvil with block time ${L1_BLOCK_TIME}s..."
+    # --rm 容器的删除是异步的：上一次 stop 一返回就走到这里，旧容器可能还没消失，
+    # 直接 run 会因同名冲突失败。先强删并等它真正消失。
+    docker rm -f anvil-chain >/dev/null 2>&1 || true
+    for _ in $(seq 1 20); do
+      [ -z "$(docker ps -aq -f name='^anvil-chain$')" ] && break
+      sleep 0.5
+    done
     docker run --rm -d -p 8545:8545 --name anvil-chain \
       --entrypoint anvil ghcr.io/foundry-rs/foundry:v1.3.2 \
       --chain-id=$L1_CHAIN_ID --accounts=20 --host=0.0.0.0 \
@@ -101,9 +108,14 @@ if [ ! -f "$JWT_FILE" ]; then
   echo "Generated JWT at $JWT_FILE"
 fi
 
-# ---------- op-geth init（仅首次）----------
+# 分叉表由 activate-fork.sh 在激活分叉时烘入 genesis.json（sync_fork 写 rollup + bake-genesis-forks.sh
+# 烘 genesis，源自 .envrc FORK_*_TIME，geth/reth 共用）。chain-start 不 bake：普通重启不改分叉表。
+
+# ---------- op-geth init（仅首次建库）----------
+# 普通重启不 re-init。激活分叉（改分叉表）时的 re-init 由 activate-fork.sh 负责：
+# geth init 对创世 hash 匹配的既有 datadir 是非破坏的，只更新分叉表、保留链数据。
 if [ ! -d "$OP_GETH_DATA_PATH/geth" ]; then
-  echo "Initializing op-geth datadir..."
+  echo "Initializing op-geth datadir (fresh)..."
   op-geth init --state.scheme=hash --datadir="$OP_GETH_DATA_PATH" "$OP_GETH_GENESIS_FILE"
 fi
 
@@ -117,9 +129,8 @@ export _CALLER_OP_NODE_ROLLUP_FILE="$OP_NODE_ROLLUP_FILE"
 export _CALLER_DEPLOYMENT_OUTFILE="$DEPLOYMENT_OUTFILE"
 export _CALLER_SAFEDB_PATH="$SAFEDB_PATH"
 
-# 硬分叉时间覆盖：op-geth 的 --override.* 由 run-op-geth.sh 从 .envrc 的 FORK_*_TIME
-# 现场组装；rollup.json 的 *_time 由 patch-rollup-config.sh 同源写入。启动新分叉用
-# scripts/activate-fork.sh（改 .envrc 时间戳后自动停链/同步 rollup/重启）。
+# 硬分叉时间：由 activate-fork.sh 烘入 genesis.json（源自 .envrc FORK_*_TIME），
+# geth 从 genesis 读，不再用 --override.*；op-node 仍读 rollup.json。三者同源一致。
 
 # ---------- 启动 op-geth（组件 flags 见 run-op-geth.sh）----------
 echo "Starting op-geth..."
@@ -136,6 +147,14 @@ for i in $(seq 1 30); do
   sleep 1
 done
 sleep 2
+
+# ---------- Flashblocks 序列器侧（FLASHBLOCKS_MODE != off；op-node 之前起）----------
+# 具体编排见 scripts/flashblocks/start-sequencer-side.sh（source 进来共享本脚本作用域）：
+# 只起 op-rbuilder + rollup-boost；op-rbuilder 由 rollup-boost 驱动，故此处不起 builder op-node
+# （它只用于 off 阶段 pre-warm 冷同步，见 scripts/flashblocks/switch-to-flashblocks-dryrun.sh）。
+if [ "${FLASHBLOCKS_MODE:-off}" != "off" ]; then
+  source "$BASE_PATH/scripts/flashblocks/start-sequencer-side.sh"
+fi
 
 # ---------- 启动 op-node（组件 flags 见 run-op-node.sh）----------
 echo "Starting op-node..."
@@ -172,6 +191,12 @@ if [ "${USE_FAULT_PROOFS:-false}" = "true" ] && [ "${SKIP_CHALLENGER:-0}" != "1"
   nohup bash "$SCRIPT_DIR/run-op-challenger.sh" >> "$LOG_DIR/op-challenger.log" 2>&1 &
   echo $! > "$PID_DIR/op-challenger.pid"
   echo "  op-challenger started (pid $(cat $PID_DIR/op-challenger.pid)), log: $LOG_DIR/op-challenger.log"
+fi
+
+# ---------- Flashblocks 用户面（enabled；本地=生产同构，proxy 不省略）----------
+# 具体编排见 scripts/flashblocks/start-user-side.sh（source 进来共享本脚本作用域）。
+if [ "${FLASHBLOCKS_MODE:-off}" = "enabled" ] && [ "${SKIP_FB_USER:-0}" != "1" ]; then
+  source "$BASE_PATH/scripts/flashblocks/start-user-side.sh"
 fi
 
 echo ""

@@ -118,7 +118,7 @@ If `USE_FAULT_PROOFS=true` and you plan to run challenger, also build/copy `op-c
 Run setup in remote mode:
 
 ```bash
-bash scripts/chain-setup.sh remote
+bash scripts/deploy-chain/chain-setup.sh remote
 ```
 
 This will:
@@ -202,7 +202,7 @@ jq '{genesis, chain_op_config}' "$DEPLOYMENT_CONFIG_PATH/rollup.json"
 Start L2 services in remote mode:
 
 ```bash
-bash scripts/chain-start.sh remote
+bash scripts/chain-ops/chain-start.sh remote
 ```
 
 This does not start or stop the remote L1. It only starts local L2 services using the generated config.
@@ -273,46 +273,15 @@ jq \
   && mv /tmp/rollup.json "$DEPLOYMENT_CONFIG_PATH/rollup.json"
 ```
 
-Write the same fork times into `scripts/chain-start.sh` for `op-geth`:
+`op-geth` no longer takes `--override.*` flags (the old `OP_GETH_OVERRIDE_FLAGS`
+recipe is obsolete). Fork times are the single source of truth in `rollup.json`
+and get baked into `genesis.json` (shared by op-geth and the reth-family clients),
+then applied to the running datadir via a non-destructive `geth init` re-init.
+This is fully automated by `activate-fork.sh`, which patches `rollup.json` from
+`.envrc`, bakes `genesis.json`, re-inits op-geth, and restarts L2:
 
 ```bash
-python3 - <<'PY'
-import json
-import os
-import re
-from pathlib import Path
-
-rollup_path = Path(os.environ["DEPLOYMENT_CONFIG_PATH"]) / "rollup.json"
-envrc = Path(".envrc")
-
-rollup = json.loads(rollup_path.read_text())
-forks = {
-    "fjord": rollup["fjord_time"],
-    "granite": rollup["granite_time"],
-    "holocene": rollup["holocene_time"],
-    "isthmus": rollup["isthmus_time"],
-    "jovian": rollup["jovian_time"],
-}
-
-override = " ".join(f"--override.{name}={ts}" for name, ts in forks.items())
-new_line = f'export OP_GETH_OVERRIDE_FLAGS="{override}"'
-
-text = envrc.read_text()
-pattern = re.compile(r'^export OP_GETH_OVERRIDE_FLAGS=.*$', re.MULTILINE)
-if pattern.search(text):
-    text = pattern.sub(new_line, text)
-else:
-    text = text.rstrip("\n") + "\n" + new_line + "\n"
-
-envrc.write_text(text)
-print("Updated .envrc OP_GETH_OVERRIDE_FLAGS:", override)
-PY
-```
-
-Restart L2:
-
-```bash
-bash scripts/chain-start.sh remote
+bash scripts/deploy-chain/activate-fork.sh remote
 ```
 
 ## 9. Verify Jovian Parameters
@@ -359,7 +328,7 @@ This does not stop the remote L1.
 
 ## Important Notes
 
-- `chain-setup.sh remote` deploys to the configured remote L1. Double-check `.envrc` before running.
+- `scripts/deploy-chain/chain-setup.sh remote` deploys to the configured remote L1. Double-check `.envrc` before running.
 - Remote L1 accounts must be funded before setup. The scripts cannot use `anvil_setBalance`.
 - Keep `$DEPLOYMENT_CONFIG_PATH` artifacts for the network. They are required by startup and Jovian scripts.
 - If `CUSTOM_GAS_TOKEN_ADDRESS` is empty, setup deploys a new token on the remote L1 and writes the address back to `.envrc`.

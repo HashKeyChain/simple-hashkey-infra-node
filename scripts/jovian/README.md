@@ -11,8 +11,8 @@ cd /Users/zhuangqianwei/github.com/HashKeyChain/simple-hashkey-infra-node
 执行这些脚本前，需要先完成本地链初始化和启动：
 
 ```bash
-bash scripts/chain-setup.sh local
-bash scripts/chain-start.sh
+bash scripts/deploy-chain/chain-setup.sh local
+bash scripts/chain-ops/chain-start.sh local
 ```
 
 确认 `.envrc` 中至少有这些变量：
@@ -101,7 +101,7 @@ print("Updated .envrc OP_GETH_OVERRIDE_FLAGS:", override)
 PY
 
 # 6. 重启 L2 服务
-bash scripts/chain-start.sh local
+bash scripts/chain-ops/chain-start.sh local
 
 # 7. 查询当前 L1/L2 参数状态
 bash scripts/jovian/query-systemconfig-params.sh

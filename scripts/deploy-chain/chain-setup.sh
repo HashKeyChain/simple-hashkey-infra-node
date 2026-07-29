@@ -77,6 +77,13 @@ ANVIL_PID=""
 if [ "$CHAIN_ENV" = "local" ]; then
   if ! cast block latest --rpc-url "$L1_RPC_URL" &>/dev/null; then
     echo "L1 not running. Starting anvil in background with block time ${L1_BLOCK_TIME}s..."
+    # --rm 容器的删除是异步的：chain-reset 的 docker stop 一返回就走到这里，旧容器可能还没消失，
+    # 直接 run 会因同名冲突失败。先强删并等它真正消失。
+    docker rm -f anvil-chain >/dev/null 2>&1 || true
+    for _ in $(seq 1 20); do
+      [ -z "$(docker ps -aq -f name='^anvil-chain$')" ] && break
+      sleep 0.5
+    done
     docker run --rm -d -p 8545:8545 --name anvil-chain \
       --entrypoint anvil ghcr.io/foundry-rs/foundry:v1.3.2 \
       --chain-id=$L1_CHAIN_ID --accounts=20 --host=0.0.0.0 \
