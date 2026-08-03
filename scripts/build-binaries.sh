@@ -47,20 +47,20 @@ cp $BASE_PATH/optimism/op-challenger/bin/op-challenger $BASE_PATH/bin/op-challen
 # just op-deployer
 # cp $BASE_PATH/optimism/op-deployer/bin/op-deployer $BASE_PATH/bin/op-deployer
 
-# ---------- fault-proof 组件（仅 USE_FAULT_PROOFS=true 时构建）----------
-# op-challenger 跑 cannon 需要：cannon 二进制、op-program(host oracle server)、absolute prestate。
-# prestate 用 reproducible（Docker）构建，保证 .pre 可复现；它必须等于 deploy-config 的
-# faultGameAbsolutePrestate，challenger 才能参与已部署的 dispute game。
-# CANNON_REF/OP_PROGRAM_REF 跟随 OP_CONTRACTS_REF 同源 commit（见 .envrc）。
+# ---------- Fault-proof components (built only when USE_FAULT_PROOFS=true) ----------
+# Running cannon through op-challenger requires the cannon binary, op-program (host oracle server), and absolute prestate.
+# Build the prestate reproducibly with Docker to ensure its .pre value can be reproduced. It must equal
+# faultGameAbsolutePrestate in deploy-config for the challenger to participate in deployed dispute games.
+# CANNON_REF/OP_PROGRAM_REF use the same source commit as OP_CONTRACTS_REF (see .envrc).
 if [ "${USE_FAULT_PROOFS:-false}" = "true" ]; then
-  # build cannon（--cannon-bin）
+  # Build cannon (--cannon-bin).
   cd $BASE_PATH/optimism
   fetch_and_checkout $CANNON_REF
   make cannon
   cp $BASE_PATH/optimism/cannon/bin/cannon $BASE_PATH/bin/cannon
 
-  # build reproducible prestate（Docker）。产物落在 optimism/op-program/bin/：
-  #   op-program(host)、op-program-client.elf、prestate.json、prestate-proof.json
+  # Build a reproducible prestate with Docker. Outputs are written to optimism/op-program/bin/:
+  #   op-program (host), op-program-client.elf, prestate.json, and prestate-proof.json
   cd $BASE_PATH/optimism
   fetch_and_checkout $OP_PROGRAM_REF
   make -C op-program reproducible-prestate
@@ -70,13 +70,14 @@ if [ "${USE_FAULT_PROOFS:-false}" = "true" ]; then
 
   echo "Fault-proof binaries built."
   echo "  Absolute prestate (.pre): $(jq -r .pre $BASE_PATH/bin/prestate-proof.json)"
-  echo "  必须等于 deploy-config 的 faultGameAbsolutePrestate，否则 challenger 无法参与已部署的 game。"
+  echo "  This must equal faultGameAbsolutePrestate in deploy-config, or the challenger cannot participate in deployed games."
 fi
 
-# macOS：对新建二进制强制重新 ad-hoc 签名。
-# Go linker 会给产物打 adhoc(linker-signed) 签名，但在部分 macOS/Apple Silicon 上，首次
-# exec 该签名会触发内核页校验卡死（进程 STAT=UNE、连 --version 都不返回、SIGQUIT 也无栈）。
-# 用 codesign 重新签名可清除这个问题；对已能运行的二进制是幂等无害操作。Linux 无 codesign，跳过。
+# macOS: force a fresh ad hoc signature on newly created binaries.
+# The Go linker gives outputs an ad hoc (linker-signed) signature, but on some macOS/Apple Silicon systems,
+# the first exec can hang during kernel page verification (process STAT=UNE, even --version never returns,
+# and SIGQUIT produces no stack). Re-signing with codesign resolves the issue and is an idempotent, harmless
+# operation for binaries that already run. Skip this on Linux, where codesign is unavailable.
 if [ "$(uname)" = "Darwin" ] && command -v codesign >/dev/null 2>&1; then
   for b in op-geth op-node op-proposer op-batcher op-challenger cannon op-program; do
     [ -f "$BASE_PATH/bin/$b" ] && codesign -f -s - "$BASE_PATH/bin/$b" >/dev/null 2>&1 || true
@@ -84,7 +85,7 @@ if [ "$(uname)" = "Darwin" ] && command -v codesign >/dev/null 2>&1; then
   echo "Re-signed binaries (adhoc) for macOS."
 fi
 
-# ---------- flashblocks Rust 组件（仅 FLASHBLOCKS_MODE != off）----------
+# ---------- Flashblocks Rust components (only when FLASHBLOCKS_MODE != off) ----------
 if [ "${FLASHBLOCKS_MODE:-off}" != "off" ]; then
   bash "$BASE_PATH/scripts/flashblocks/build-flashblocks.sh"
 fi

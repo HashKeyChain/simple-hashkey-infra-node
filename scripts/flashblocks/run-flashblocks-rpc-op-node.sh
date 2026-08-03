@@ -1,13 +1,17 @@
 #!/bin/bash
 #
-# 纯组件启动器：flashblocks RPC 副本的 verifier op-node —— 不出块（非 sequencer），
-# 通过 Engine API 驱动 run-flashblocks-rpc-op-reth.sh 的 op-reth 同步 canonical 链：
-#   - 从 L1(anvil) 派生补历史（创世 → safe head）；
-#   - 经 CL p2p 静态连主(sequencer) op-node，收 unsafe 块 gossip 跟到 unsafe head
-#     （否则 op-reth 只能到 safe head，对用户提供的 RPC 会落后于链头）。
-# 由 chain-start.sh 编排调用（需 _CALLER_SEQ_P2P_MULTIADDR），也可单独调试。
+# Component-only launcher for the verifier op-node of the Flashblocks RPC replica.
+# It is not a sequencer and does not produce blocks. Through the Engine API, it drives
+# the op-reth instance from run-flashblocks-rpc-op-reth.sh to sync the canonical chain:
+#   - derives history from L1 (anvil), from genesis through the safe head;
+#   - connects statically over CL P2P to the primary (sequencer) op-node and follows
+#     unsafe-block gossip to the unsafe head. Otherwise, op-reth can only reach the
+#     safe head, leaving its user-facing RPC behind the chain head.
+# Orchestrated by chain-start.sh (requires _CALLER_SEQ_P2P_MULTIADDR); it can also run
+# independently for debugging.
 #
-# flag 名以本地 op-node（cgt-jovian/v1.16.5）`--help` 为准；若不支持 --l2.enginekind=reth 则去掉该 flag。
+# Confirm flags against the local op-node (cgt-jovian/v1.16.5) `--help`; remove
+# --l2.enginekind=reth if it is not supported.
 #
 source .envrc
 
@@ -16,13 +20,15 @@ OP_GETH_DATA_PATH="${_CALLER_OP_GETH_DATA_PATH:-${OP_GETH_DATA_PATH:-$BASE_PATH/
 JWT_FILE="${_CALLER_JWT_FILE:-$OP_GETH_DATA_PATH/jwt.txt}"
 ROLLUP_FILE="${_CALLER_OP_NODE_ROLLUP_FILE:-${DEPLOYMENT_CONFIG_PATH:-$BASE_PATH/config/$DEPLOYMENT_CONTEXT}/rollup.json}"
 
-# 本 op-node 自己的 p2p 身份与工作目录（与主 op-node / builder op-node 分开，避免文件与端口冲突）。
+# This op-node has its own P2P identity and working directory, separate from the
+# primary and builder op-nodes to avoid file and port conflicts.
 OPNODE_DIR="$BASE_PATH/data/fb-rpc-opnode"
 mkdir -p "$OPNODE_DIR"
 P2P_KEY="$OPNODE_DIR/p2p_priv.txt"
 [ -f "$P2P_KEY" ] || op-node p2p genkey | tail -1 > "$P2P_KEY"
 
-# 静态连主(sequencer) op-node：优先用 chain-start 下传的多址；单独运行时从主 op-node 的固定 p2p key 现算。
+# Connect statically to the primary (sequencer) op-node. Prefer the multiaddress supplied
+# by chain-start; when run independently, derive it from the primary op-node's fixed P2P key.
 STATIC_PEER="${_CALLER_SEQ_P2P_MULTIADDR:-${SEQ_P2P_MULTIADDR:-}}"
 if [ -z "$STATIC_PEER" ]; then
   SEQ_KEY="${_CALLER_SEQ_P2P_KEY:-$BASE_PATH/data/op-node/p2p_priv.txt}"

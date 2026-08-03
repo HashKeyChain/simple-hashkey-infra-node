@@ -1,34 +1,37 @@
 #!/bin/bash
 #
-# 纯组件启动器：仅负责用正确 flags 启动 op-node（本组件 flags 的唯一真源）。
-# 由 chain-start.sh 编排调用，也可单独运行用于调试/重启。
+# Component-only launcher: starts op-node with the correct flags (the single source of truth for this component's flags).
+# Orchestrated by chain-start.sh; it can also be run independently for debugging or restarts.
 #
-# 单独运行前提：op-geth 已在 :$OP_GETH_AUTHRPC_PORT 提供 engine RPC、JWT 已生成、rollup.json 已生成。
+# Prerequisites for standalone use: op-geth is serving the Engine RPC on :$OP_GETH_AUTHRPC_PORT,
+# and both the JWT and rollup.json have been generated.
 #
 
 source .envrc
 
-# 允许被 chain-start 编排层通过 _CALLER_* 覆盖；单独运行时回落到 .envrc / 默认值。
+# Allow the chain-start orchestration layer to override values via _CALLER_*; fall back to .envrc/defaults when run independently.
 L1_RPC_URL="${_CALLER_L1_RPC_URL:-$L1_RPC_URL}"
 OP_GETH_DATA_PATH="${_CALLER_OP_GETH_DATA_PATH:-${OP_GETH_DATA_PATH:-$BASE_PATH/data/op-geth}}"
 JWT_FILE="${_CALLER_JWT_FILE:-$OP_GETH_DATA_PATH/jwt.txt}"
-# rollup.json 统一取 config/<context>/（git 跟踪、经 runbook patch 的规范配置），
-# 而非 .envrc 默认指向的 optimism/.../deployments/（构建原始产物）。
+# Always read rollup.json from config/<context>/ (the canonical, Git-tracked configuration patched by the runbook),
+# rather than the raw build output under optimism/.../deployments/ referenced by .envrc by default.
 OP_NODE_ROLLUP_FILE="${_CALLER_OP_NODE_ROLLUP_FILE:-${DEPLOYMENT_CONFIG_PATH:-$BASE_PATH/config/$DEPLOYMENT_CONTEXT}/rollup.json}"
 SAFEDB_PATH="${_CALLER_SAFEDB_PATH:-${SAFEDB_PATH:-$BASE_PATH/data/op-node/safedb}}"
 
 mkdir -p "$(dirname "$SAFEDB_PATH")"
 
-# L2 engine 目标随模式切换：off → 直连 op-geth(OP_GETH_AUTHRPC_PORT)；dry_run/enabled → 走 rollup-boost(RB_ENGINE_PORT)。
+# Switch the L2 Engine target by mode: off -> connect directly to op-geth (OP_GETH_AUTHRPC_PORT);
+# dry_run/enabled -> connect through rollup-boost (RB_ENGINE_PORT).
 if [ "${FLASHBLOCKS_MODE:-off}" = "off" ]; then
   L2_ENGINE_URL="http://localhost:${OP_GETH_AUTHRPC_PORT:-8651}"
 else
   L2_ENGINE_URL="http://localhost:${RB_ENGINE_PORT:-8551}"
 fi
 
-# CL p2p 始终开启（含 off 模式）：主(sequencer) op-node 向 builder op-node gossip unsafe 块，
-# 使 op-rbuilder 在 off 阶段就能预同步到 unsafe head，再从容切 dry_run/enabled。
-# 固定 priv key → 稳定 peerID（供 builder op-node 静态连）；关 discv5、内存 peerstore（本地仅静态互联）。
+# Keep CL P2P enabled in every mode, including off: the primary (sequencer) op-node gossips unsafe blocks
+# to the builder op-node so op-rbuilder can pre-sync to the unsafe head while off, enabling a smooth switch to dry_run/enabled.
+# A fixed private key provides a stable peer ID for the builder op-node's static connection; disable discv5 and use
+# an in-memory peerstore because local peers are connected statically only.
 SEQ_P2P_KEY="${_CALLER_SEQ_P2P_KEY:-$BASE_PATH/data/op-node/p2p_priv.txt}"
 mkdir -p "$(dirname "$SEQ_P2P_KEY")"
 [ -f "$SEQ_P2P_KEY" ] || op-node p2p genkey | tail -1 > "$SEQ_P2P_KEY"

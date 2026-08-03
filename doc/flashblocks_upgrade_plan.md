@@ -87,9 +87,13 @@ rollup-boost（新增：Engine API 代理 + 校验 + flashblocks 广播；三档
   为**后续独立事项**，本方案不纳入。
 - **交付形态已定**：三个 fork（`HSKChain/rollup-boost`、`HSKChain/op-rbuilder`、`HSKChain/reth`）
   以 **git submodule** 加入基础设施仓库，锁 tag、从源码自编（本地/生产同一套构建）。
-- **模式切换已定**：`FLASHBLOCKS_MODE` 作启动初值（off/dry_run/enabled）；运行中 dry-run↔enabled
-  用 rollup-boost `debug set-execution-mode` 热切、不断链；硬回退用改初值 + 重启。本地验证细节见
-  `doc/flashblocks_local_impl.md`。
+- **模式切换已定**：`FLASHBLOCKS_MODE` 作启动初值（off/dry_run/enabled），决定起哪些组件；
+  运行中用 rollup-boost `debug set-execution-mode` 热切、不断链。注意两套名字不是一回事——
+  运行时的 ExecutionMode 只有 `enabled` / `dry_run` / `disabled` 三档，**没有 off**；
+  `off` 仅指启动时不拉起 flashblocks 组件。上线后的止血档位是 `disabled`（见 7.2）。
+  本地验证细节见 `doc/flashblocks_local_impl.md`。
+- **对外鉴权形态已定**：对齐 Base，广播代理**不配 api-keys**、走公开 `/ws` 路由，靠连接数限流兜底。
+  两种模式互斥，配了 api-keys 公开路由即消失，详见第七节。
 
 > op-reth 版本注：官方 Jovian 表中普通节点用 v1.9.2，**跑 flashblocks 的链用 v1.9.3**。
 
@@ -128,9 +132,29 @@ rollup-boost（新增：Engine API 代理 + 校验 + flashblocks 广播；三档
 - **验证门**：验收清单全过，具备上生产条件。
 
 ### P6 · 生产灰度上线
-- **做什么**：备份现网状态与版本、准备一键回滚；在生产链上依次重复"执行层影子验证 → 构建器 dry-run（观测足够时长）→ 低峰灰度切 on → 接入对外代理与 RPC"；建立监控与告警；对外公告端点与 `pending` 用法。
-- **验证门**：各档观测稳定、无持续分歧与异常回退。
-- **回退触发**：分歧率非零且上升 / 频繁回退 / 预确认延迟劣化 / Fault Proof 侧异常——任一触发即回退到 off。
+
+生产上线把**执行模式**与**对外暴露**拆成两个独立开关，分三步推进。前两步对外零变化，第三步才交付预确认。
+先备份现网状态与版本、准备一键回滚，并建立监控与告警。
+
+**P6.1 · off → dry_run（对外无变化）**
+- **做什么**：起 rollup-boost、op-rbuilder、广播代理、感知 RPC 及其 verifier op-node。代理与感知 RPC 只在内网可达——公网路由尚未建立（无 LB listener、无 DNS 记录），安全组仅放行自有感知 RPC 主机。
+- **为什么不能跳过**：dry_run 是 builder 区块进入 canonical **之前**唯一的产出路径验证。基准执行层会独立重放 builder 的候选块并重算 stateRoot/receiptsRoot/gasUsed，不一致即 INVALID，在 rollup-boost 日志留下 `InvalidPayload`。"builder 高度追平基准执行层"只证明它能**跟随**执行，不证明它自己**产出**的块正确——这是两条不同的代码路径。
+- **验证门**：`InvalidPayload` 为 0；builder 投递率稳定；出块节奏无退化；经内网感知 RPC 跑通 P4 的预确认验证。
+- **观测周期按条件界定而非固定时长**：覆盖日内流量高峰，跨过至少一个完整的 batcher 提交与 proposer 输出周期。
+
+**P6.2 · dry_run → enabled（对外仍无变化）**
+- **做什么**：`debug set-execution-mode` 热切，不断链、不重启任何组件。
+- **注意**：这是整个升级里风险最大的一步，且它在开放端口**之前**就已生效——全网交易自此由 op-rbuilder 排序打包。用户此时只是看不到预确认，底层出块权已经换人，不要误判为"对外等于没升级"。
+- **为什么值得单独设一档**：拿真实生产流量验证 builder 的产出路径，强于 dry_run。dry_run 只证明基准执行层认可该块，这一档证明它真的上链、且 batcher / proposer / 同步节点全部正常。
+- **回退成本极低**：对外未暴露任何东西，切回 dry_run 即可，builder 仍在跟随同步、无需追块。
+- **验证门**：safe head 正常推进；proposer 输出正常；同步节点无分叉；预确认延迟符合预期（内网观测）。
+
+**P6.3 · 开放对外端点**
+- **做什么**：建 LB listener 与 DNS 记录，把广播代理与感知 RPC 纳入公网路由。**代理无需重启、配置不变**。
+- **对外公告分两份受众**，见第七节。
+- **验证门**：外部订阅可用；连接数与限流指标正常；预确认延迟符合公告承诺。
+
+**回退触发**（任一即触发）：`InvalidPayload` 非零且上升 / 频繁回退兜底 / 预确认延迟劣化 / safe head 停滞 / Fault Proof 侧异常。回退动作见第八节。
 
 ---
 
@@ -175,20 +199,101 @@ rollup-boost（新增：Engine API 代理 + 校验 + flashblocks 广播；三档
 
 ---
 
-## 七、回滚策略
+## 七、生产网络方案（对外暴露与代理生命周期）
+
+### 7.1 两个对外端点，两类受众
+
+对齐 Base 的划分——两个端点服务的不是同一批人：
+
+| 端点 | 受众 | Base 对应 |
+|---|---|---|
+| flashblocks 广播代理 | 节点运营方（合作方自建感知节点） | `wss://mainnet.flashblocks.base.org/ws` |
+| flashblocks 感知 RPC | 应用开发者（标准 `pending` 语义） | `mainnet.base.org` |
+
+Base 明确标注原始广播流"for node operators only"、应用不应直连，应用侧一律走感知 RPC 的 `pending`。
+公告时必须分两份说明，否则 DApp 会直连广播流。
+
+**鉴权形态对齐 Base：不配 api-keys、公开 `/ws` 路由，靠连接数限流兜底。**
+注意本代理的两种模式互斥——一旦配置 api-keys，公开 `/ws` 路由即消失、改为 `/ws/{api_key}`，
+无法在同一实例上同时服务两类受众。
+
+### 7.2 代理生命周期：一次启动，永不封禁
+
+订阅端（感知 RPC 的 flashblocks 客户端）**重连无退避**：连接被拒即立刻重试，中间没有任何 sleep。
+因此长时间关闭端口会让每个订阅者满核空转并刷爆日志；而"端口开着但没数据"完全无害——
+连接原地保持，只是变哑。两者的差别决定了下列全部运维规则。
+
+1. **sequencer 栈升级不碰代理。** rollup-boost 停掉后代理按指数退避安静重试（上限 20s），
+   外部连接不断，恢复后自动续推。此时重启代理反而凭空制造一次断连；且 sequencer 暂停期间链本就不出块，
+   静默是正确行为而非降级。
+2. **紧急止血切 `disabled`。** 一条 debug API、零重启：rollup-boost 不再向 builder 下发 FCU，
+   builder 不产 flashblock，广播自然静默，订阅连接保持。代价是 builder 收不到 newPayload 会掉队，
+   恢复前需重新同步。
+3. **计划内暂停预览且需快速回切，才用 `dry_run` + 代理空上游重启。** dry_run 下 newPayload 仍转发给
+   builder（保持同步、恢复快），但它照常广播未被采用的预览，必须同时把代理上游指向空地址并重启才能
+   对外静默——这会带来一次断连。用一次断连换 builder 不掉队。
+4. **代理自身升级走多实例滚动重启。** 外部最多经历一次正常重连。
+
+> **`dry_run` 不是止血手段。** 它只停止*采用* builder 区块，广播照发，用户会拿到不保证兑现的预确认。
+> 上线后需要止血一律用 `disabled`。
+
+### 7.3 负载均衡与代理配置要点
+
+- **健康检查用 `/healthz`，且不要关联上游状态。** 该端点恒返回 200、不反映上游连通性，这是期望行为：
+  若健康检查跟随上游，rollup-boost 一停所有代理实例会被同时摘出 LB，制造出正要避免的断连风暴。
+  流是否在推靠 Prometheus 指标（`upstream_connections`、发送计数）告警，两者职责分开。
+- **必须开启客户端 ping**（默认关闭）。静默期代理不发任何字节，LB 的空闲超时（常见默认 60s）会掐断连接
+  ——恰好在维护窗口把断连造出来。开启后按固定间隔心跳，可扛任意长静默。LB 空闲超时须大于心跳间隔。
+- **LB 必须正确设置 `X-Forwarded-For`。** 代理按该头识别客户端 IP 做 per-IP 限流；若未设置，
+  所有连接在代理看来同源于 LB，per-IP 上限会迅速开始拒绝正常订阅者。
+- **连接数上限按合作方规模上调**：per-IP 与单实例上限的默认值面向小规模场景。
+- **多实例需配 Redis 做跨实例限流**，否则各实例内存独立计数，扩容与滚动重启期间行为不一致。
+- **开启 Brotli 压缩**：Unichain 的公开流即为 Brotli 压缩，reth 客户端原生支持解压，公网扇出省带宽。
+
+```
+公网 → LB（TLS 终止，wss）
+        健康检查 /healthz（不关联上游）
+        空闲超时 > 客户端心跳间隔
+        正确透传 X-Forwarded-For
+     → 广播代理 × N（N ≥ 2，供滚动重启）
+        公开 /ws 路由、客户端 ping、Brotli
+        连接数限流 + Redis 跨实例计数
+     → rollup-boost 广播端口（内网，有指数退避）
+```
+
+### 7.4 本地演练与生产的差异
+
+本地无 LB，用代理的监听地址模拟路由门禁：P6.1/P6.2 绑 `127.0.0.1`（自有感知 RPC 走 loopback 正常订阅，
+外部不可达），P6.3 换 `0.0.0.0`。**本地这一步需要重启代理，生产对应的是新增一条路由、不涉及重启**
+——切勿把本地做法照搬上线。
+
+---
+
+## 八、回滚策略
 
 | 影响面 | 回滚动作 |
 |---|---|
-| flashblocks 异常 | rollup-boost 切 off → 回到纯执行层出块，用户无感 |
+| flashblocks 异常，需立即止血 | rollup-boost 切 `disabled` → 回到纯兜底执行层出块，广播静默、订阅连接不断；代价是 builder 掉队需重新同步 |
+| 需暂停预览但保留 builder 同步 | 切 `dry_run` + 代理改空上游重启 → 恢复快，代价是一次对外断连 |
 | 构建器异常 | 停 builder → 自动回退兜底执行层 |
 | 主执行层异常 | 共识层 Engine 端点切回 op-geth（过渡期一直保留） |
 | 彻底回退 | 停全部新增组件，恢复升级前形态 |
 
-核心安全网：**rollup-boost 的 off 模式 = 升级前的纯 op-geth 出块**，任何阶段可秒级回退。
+核心安全网：**rollup-boost 的 `disabled` 模式 = 升级前的纯执行层出块**，任何阶段可秒级回退，
+且不影响外部订阅连接。
+
+两条禁忌：
+- **不要靠封禁代理端口来降级**——订阅端重连无退避，会让所有外部节点持续空转报错。
+- **不要用 `dry_run` 当止血手段**——它照常广播未被采用的预览。
+
+> 关于"自动回退"的边界：兜底只在 builder **取不到 payload** 时触发（请求失败即回退基准执行层）。
+> rollup-boost 默认不因健康检查跳过 builder（`ignore_unhealthy_builders` 默认关闭），
+> 因此"进程还活着但产出异常"的 builder **不会**被自动绕过，必须由人工切 `disabled`。
+> 监控告警要覆盖这种"活着但不对"的形态，不能只监控进程存活。
 
 ---
 
-## 八、风险登记
+## 九、风险登记
 
 | 风险 | 等级 | 应对 |
 |---|---|---|
@@ -199,6 +304,10 @@ rollup-boost（新增：Engine API 代理 + 校验 + flashblocks 广播；三档
 | Fault Proof 兼容 | 低 | 最终上链块为规范块，P5 专项验收 |
 | geth EOL 前未完成 reth 化 | 中 | 按"执行层演进路径"排期，赶在 EOL/下个分叉前 |
 | 生产切换风险 | 中 | 影子/dry-run 前置 + 低峰灰度 + 一键回滚 |
+| dry_run 期间广播未被采用的预览 | 中 | P6.1/P6.2 公网路由未建立，外部无从订阅；上线后禁止用 dry_run 止血（见 7.2） |
+| 订阅端重连无退避，封端口即引发外部空转 | 中 | 端口永不封禁，降级一律用 `disabled`；代理生命周期独立于链栈（见 7.2） |
+| 静默期被 LB 空闲超时掐断连接 | 中 | 开启客户端 ping，LB 空闲超时大于心跳间隔（见 7.3） |
+| per-IP 限流误伤（XFF 未透传） | 中 | LB 正确设置 `X-Forwarded-For`，上线前用外部客户端实测（见 7.3） |
 
 ---
 
@@ -212,4 +321,6 @@ rollup-boost（新增：Engine API 代理 + 校验 + flashblocks 广播；三档
 | P3 启用 flashblocks | 真正产出 | 稳定产出 + 可回退 |
 | P4 面向用户 | 交付预确认 | 亚秒 `pending` 可见 |
 | P5 端到端验收 | 全面达标 | 验收清单全过 |
-| P6 生产灰度 | 生产上线 | 观测稳定、可回滚 |
+| P6.1 生产 dry_run | builder 产出路径验证 | `InvalidPayload` 为 0，对外无变化 |
+| P6.2 生产 enabled | 真实流量验证出块权移交 | safe head / proposer 正常，对外仍无变化 |
+| P6.3 开放端点 | 交付预确认 | 外部订阅可用，限流指标正常 |

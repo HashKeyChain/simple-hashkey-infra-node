@@ -1,21 +1,21 @@
-# Jovian 升级与验证操作文档
+# Jovian Upgrade and Verification Guide
 
-这个目录下的脚本用于本地链 Jovian 升级后的 L1 `SystemConfig` 升级、参数设置和 L2 生效验证。所有命令默认从仓库根目录执行：
+The scripts in this directory upgrade the L1 `SystemConfig`, configure parameters, and verify L2 activation after a local-chain Jovian upgrade. Run all commands from the repository root unless otherwise noted:
 
 ```bash
 cd /Users/zhuangqianwei/github.com/HashKeyChain/simple-hashkey-infra-node
 ```
 
-## 1. 前置条件
+## 1. Prerequisites
 
-执行这些脚本前，需要先完成本地链初始化和启动：
+Set up and start the local chain before running these scripts:
 
 ```bash
 bash scripts/deploy-chain/chain-setup.sh local
 bash scripts/chain-ops/chain-start.sh local
 ```
 
-确认 `.envrc` 中至少有这些变量：
+Confirm that `.envrc` defines at least these variables:
 
 ```bash
 L1_RPC_URL=...
@@ -25,23 +25,23 @@ CONTRACTS_BEDROCK_PATH=...
 DEPLOYMENT_CONFIG_PATH=...
 ```
 
-脚本会读取 `artifact.json` 中的 `SystemConfigProxy`、`ProxyAdmin`、`SystemOwnerSafe` 等地址。默认交易私钥来自 `GS_ADMIN_PRIVATE_KEY`，也可以用每个脚本对应的私钥环境变量覆盖。
+The scripts read addresses such as `SystemConfigProxy`, `ProxyAdmin`, and `SystemOwnerSafe` from `artifact.json`. Transactions use `GS_ADMIN_PRIVATE_KEY` by default; each script also supports a script-specific private-key environment variable as an override.
 
-## 2. 推荐执行顺序
+## 2. Recommended Execution Order
 
-完整流程建议按这个顺序走：
+Run the complete workflow in this order:
 
 ```bash
-# 1. 部署 Jovian 版本 SystemConfig implementation
+# 1. Deploy the Jovian SystemConfig implementation
 bash scripts/jovian/deploy-systemconfig.sh
 
-# 2. 把 SystemConfigProxy 升级到上一步输出的 implementation
+# 2. Upgrade SystemConfigProxy to the implementation output by the previous step
 bash scripts/jovian/upgrade-systemconfig.sh <new_system_config_implementation>
 
-# 3. 停止 L2 服务；不要停止 Anvil/L1
+# 3. Stop the L2 services; keep Anvil/L1 running
 bash scripts/chain-stop.sh
 
-# 4. 配置分叉时间
+# 4. Configure fork times
 source .envrc
 NOW_HEX=$(cast block latest --rpc-url "$L1_RPC_URL" --json | jq -r .timestamp)
 NOW=$((NOW_HEX))
@@ -65,9 +65,10 @@ jq \
   "$DEPLOYMENT_CONFIG_PATH/rollup.json" > /tmp/rollup.json \
   && mv /tmp/rollup.json "$DEPLOYMENT_CONFIG_PATH/rollup.json"
 
-# 5. 从 rollup.json 读取 fork 时间，写入 .envrc 的 OP_GETH_OVERRIDE_FLAGS。
-#    op-geth 的启动参数已收敛到 scripts/run-op-geth.sh（唯一真源），它会 source .envrc
-#    并把 OP_GETH_OVERRIDE_FLAGS 追加到 op-geth flags 末尾；chain-start.sh 编排调用它即可生效。
+# 5. Read fork times from rollup.json and write OP_GETH_OVERRIDE_FLAGS to .envrc.
+#    scripts/run-op-geth.sh is the single source of truth for op-geth startup
+#    arguments. It sources .envrc and appends OP_GETH_OVERRIDE_FLAGS to the
+#    op-geth flags; the chain-start.sh orchestration invokes it automatically.
 python3 - <<'PY'
 import json
 import os
@@ -100,39 +101,39 @@ envrc.write_text(text)
 print("Updated .envrc OP_GETH_OVERRIDE_FLAGS:", override)
 PY
 
-# 6. 重启 L2 服务
+# 6. Restart the L2 services
 bash scripts/chain-ops/chain-start.sh local
 
-# 7. 查询当前 L1/L2 参数状态
+# 7. Query the current L1/L2 parameter state
 bash scripts/jovian/query-systemconfig-params.sh
 
-# 8. 设置 operator fee 参数
+# 8. Set operator fee parameters
 bash scripts/jovian/set-operator-fee.sh 1 1000000
 
-# 9. 发一笔 L2 交易验证 operator fee 和 Jovian receipt 字段
+# 9. Send an L2 transaction to verify the operator fee and Jovian receipt fields
 bash scripts/jovian/verify-jovian-fees.sh
 
-# 10. 设置 minBaseFee，单位是 wei
+# 10. Set minBaseFee in wei
 bash scripts/jovian/set-min-base-fee.sh 1000000000
 
-# 11. 验证 minBaseFee 是否进入 L2 block extraData，并且 baseFeePerGas >= minBaseFee
+# 11. Verify that minBaseFee appears in L2 block extraData and baseFeePerGas >= minBaseFee
 bash scripts/jovian/verify-min-base-fee.sh 1000000000
 
-# 12. 设置 EIP-1559 参数：denominator、elasticity
+# 12. Set the EIP-1559 denominator and elasticity parameters
 bash scripts/jovian/set-eip1559-params.sh 250 6
 
-# 13. 设置 DA footprint gas scalar
+# 13. Set the DA footprint gas scalar
 bash scripts/jovian/set-da-footprint-gas-scalar.sh 400
 
-# 14. 最后再统一查询一次
+# 14. Query all parameters again
 bash scripts/jovian/query-systemconfig-params.sh
 ```
 
-配置分叉时间时只停止 L2，不要停止 Anvil/L1。`rollup.json` 给 `op-node` 使用，`--override.*` 给 `op-geth` 使用，两边时间必须一致。L1 配置交易确认后，L2 不一定立刻生效；需要等 `op-node` derive 到包含该 L1 交易的 L1 block，后续 L2 block 才会带上新配置。
+When configuring fork times, stop only L2 and keep Anvil/L1 running. `op-node` uses `rollup.json`, while `op-geth` uses the `--override.*` flags; the times must match on both sides. The L2 changes may not take effect immediately after the L1 configuration transaction is confirmed. Wait for `op-node` to derive the L1 block containing that transaction; subsequent L2 blocks will then include the new configuration.
 
-## 3. 脚本说明
+## 3. Script Reference
 
-### 3.1 部署和升级 SystemConfig
+### 3.1 Deploying and Upgrading SystemConfig
 
 `deploy-systemconfig.sh`
 
@@ -140,14 +141,14 @@ bash scripts/jovian/query-systemconfig-params.sh
 bash scripts/jovian/deploy-systemconfig.sh [contracts_ref]
 ```
 
-作用：
+Behavior:
 
-- 切到指定 contracts 分支；默认读取 `.envrc` 的 `CONTRACTS_UPGRADE_REF`。
-- 如果命令行传入 `[contracts_ref]`，则临时覆盖 `CONTRACTS_UPGRADE_REF`。
-- 编译合约并部署新的 `SystemConfig` implementation。
-- 只部署 implementation，不升级 proxy，不修改 `artifact.json`。
+- Switches to the specified contracts branch; defaults to `CONTRACTS_UPGRADE_REF` from `.envrc`.
+- Temporarily overrides `CONTRACTS_UPGRADE_REF` when `[contracts_ref]` is provided on the command line.
+- Compiles the contracts and deploys a new `SystemConfig` implementation.
+- Deploys only the implementation; it does not upgrade the proxy or modify `artifact.json`.
 
-输出里的 `SystemConfig implementation` 要作为下一步 `upgrade-systemconfig.sh` 的入参。
+Pass the `SystemConfig implementation` value from the output to `upgrade-systemconfig.sh` in the next step.
 
 `upgrade-systemconfig.sh`
 
@@ -155,14 +156,14 @@ bash scripts/jovian/deploy-systemconfig.sh [contracts_ref]
 bash scripts/jovian/upgrade-systemconfig.sh <new_system_config_implementation>
 ```
 
-作用：
+Behavior:
 
-- 检查新 implementation 在 L1 上有 code。
-- 通过 `ProxyAdmin.upgrade(SystemConfigProxy, newImplementation)` 升级代理。
-- 升级后查询 `SystemConfig.version()` 验证 proxy 已指向新实现。
-- 不部署 implementation，不设置任何 Jovian 参数，不修改 `artifact.json`。
+- Checks that the new implementation has code on L1.
+- Upgrades the proxy through `ProxyAdmin.upgrade(SystemConfigProxy, newImplementation)`.
+- Queries `SystemConfig.version()` after the upgrade to verify that the proxy points to the new implementation.
+- Does not deploy an implementation, set any Jovian parameters, or modify `artifact.json`.
 
-## 4. 参数设置脚本
+## 4. Parameter Configuration Scripts
 
 ### 4.1 Operator Fee
 
@@ -170,22 +171,22 @@ bash scripts/jovian/upgrade-systemconfig.sh <new_system_config_implementation>
 bash scripts/jovian/set-operator-fee.sh [scalar] [constant]
 ```
 
-默认值：
+Defaults:
 
 - `scalar = ${OPERATOR_FEE_SCALAR:-1}`
 - `constant = ${OPERATOR_FEE_CONSTANT:-1000000}`
 
-作用：
+Behavior:
 
-- 调用 L1 `SystemConfig.setOperatorFeeScalars(uint32,uint64)`。
-- 设置后先验证 L1 `SystemConfig` 中的值。
-- 等 L2 derive 后，可以用 `query-systemconfig-params.sh` 或 `verify-jovian-fees.sh` 验证 L2 生效。
+- Calls L1 `SystemConfig.setOperatorFeeScalars(uint32,uint64)`.
+- Verifies the values in the L1 `SystemConfig` after setting them.
+- After L2 derivation, use `query-systemconfig-params.sh` or `verify-jovian-fees.sh` to verify L2 activation.
 
-验证重点：
+Key checks:
 
-- L2 `GasPriceOracle.isJovian()` 返回 `true`。
-- L2 receipt 中出现 `operatorFeeScalar`、`operatorFeeConstant`。
-- `OperatorFeeVault` 余额增量等于脚本计算出的 operator fee。
+- L2 `GasPriceOracle.isJovian()` returns `true`.
+- The L2 receipt contains `operatorFeeScalar` and `operatorFeeConstant`.
+- The `OperatorFeeVault` balance increase equals the operator fee calculated by the script.
 
 ### 4.2 Min Base Fee
 
@@ -193,28 +194,28 @@ bash scripts/jovian/set-operator-fee.sh [scalar] [constant]
 bash scripts/jovian/set-min-base-fee.sh [min_base_fee_wei]
 ```
 
-默认值：
+Default:
 
 - `min_base_fee_wei = ${MIN_BASE_FEE:-1000000000}`
 
-作用：
+Behavior:
 
-- 调用 L1 `SystemConfig.setMinBaseFee(uint64)`。
-- 设置前会打印当前 L2 `baseFeePerGas`，方便选择一个能明显触发 clamp 的 `minBaseFee`。
-- `0` 表示关闭最小 base fee 约束。
+- Calls L1 `SystemConfig.setMinBaseFee(uint64)`.
+- Prints the current L2 `baseFeePerGas` before configuration, making it easier to choose a `minBaseFee` that clearly triggers the clamp.
+- `0` disables the minimum base fee constraint.
 
-建议：
+Recommendations:
 
-- 如果想看到明显效果，设置值应大于当前 L2 `baseFeePerGas`。
-- 最准确的验证方式是查 L2 最新区块的 `extraData.minBaseFee` 和 `baseFeePerGas`，不是看单笔交易。
+- To make the effect clearly visible, set a value greater than the current L2 `baseFeePerGas`.
+- The most accurate verification is to inspect `extraData.minBaseFee` and `baseFeePerGas` in the latest L2 block, rather than examining a single transaction.
 
-验证：
+Verification:
 
 ```bash
 bash scripts/jovian/verify-min-base-fee.sh [expected_min_base_fee_wei]
 ```
 
-如果不传入参，脚本会读取 L1 `SystemConfig.minBaseFee()` 作为期望值。
+If no argument is provided, the script reads L1 `SystemConfig.minBaseFee()` as the expected value.
 
 ### 4.3 EIP-1559 Params
 
@@ -222,24 +223,24 @@ bash scripts/jovian/verify-min-base-fee.sh [expected_min_base_fee_wei]
 bash scripts/jovian/set-eip1559-params.sh [denominator] [elasticity]
 ```
 
-默认值：
+Defaults:
 
 - `denominator = ${EIP1559_DENOMINATOR:-250}`
 - `elasticity = ${EIP1559_ELASTICITY:-6}`
 
-作用：
+Behavior:
 
-- 调用 L1 `SystemConfig.setEIP1559Params(uint32,uint32)`。
-- 两个参数都必须大于等于 `1`，脚本会拒绝 `0`。
-- 生效后会进入 L2 block `extraData`，控制后续区块 `baseFeePerGas` 的调整速度和目标 gas 使用量。
+- Calls L1 `SystemConfig.setEIP1559Params(uint32,uint32)`.
+- Both parameters must be at least `1`; the script rejects `0`.
+- Once active, the values appear in L2 block `extraData` and control the rate at which `baseFeePerGas` changes and the target gas usage of subsequent blocks.
 
-验证方式：
+Verification:
 
 ```bash
 bash scripts/jovian/query-systemconfig-params.sh
 ```
 
-重点看 `L2 latest block fee params` 中的：
+Inspect these fields under `L2 latest block fee params`:
 
 - `extraData.denominator`
 - `extraData.elasticity`
@@ -251,33 +252,33 @@ bash scripts/jovian/query-systemconfig-params.sh
 bash scripts/jovian/set-da-footprint-gas-scalar.sh [scalar]
 ```
 
-默认值：
+Default:
 
 - `scalar = ${DA_FOOTPRINT_GAS_SCALAR:-400}`
 
-作用：
+Behavior:
 
-- 调用 L1 `SystemConfig.setDAFootprintGasScalar(uint16)`。
-- 该值用于把交易预估 DA size 转成区块内的 DA footprint gas 额度。
-- L1 设置为 `0` 时，L2 derivation 会映射到默认值 `400`。
+- Calls L1 `SystemConfig.setDAFootprintGasScalar(uint16)`.
+- Converts a transaction's estimated DA size into its DA footprint gas allowance within a block.
+- When set to `0` on L1, L2 derivation maps it to the default value `400`.
 
-验证方式：
+Verification:
 
 ```bash
 bash scripts/jovian/query-systemconfig-params.sh
 bash scripts/jovian/verify-jovian-fees.sh
 ```
 
-重点看：
+Inspect:
 
 - L1 `SystemConfig.daFootprintGasScalar`
 - L2 `L1Block.daFootprintGasScalar`
-- receipt 中的 `daFootprintGasScalar`
-- receipt 中的 `blobGasUsed`
+- `daFootprintGasScalar` in the receipt
+- `blobGasUsed` in the receipt
 
-这里的 `blobGasUsed` 是 OP Stack 复用字段，用来表达 DA footprint 累积量，不表示 OP L2 支持用户发送原生 EIP-4844 blob 交易。
+Here, `blobGasUsed` is an OP Stack field reused to represent accumulated DA footprint. It does not indicate that the OP L2 supports native EIP-4844 blob transactions submitted by users.
 
-## 5. 查询和验证脚本
+## 5. Query and Verification Scripts
 
 ### 5.1 query-systemconfig-params.sh
 
@@ -285,14 +286,14 @@ bash scripts/jovian/verify-jovian-fees.sh
 bash scripts/jovian/query-systemconfig-params.sh
 ```
 
-这是只读查询脚本，不发交易。
+This is a read-only query script; it does not send transactions.
 
-查询内容：
+It queries:
 
-- L1 `SystemConfig` 参数：`operatorFeeScalar`、`operatorFeeConstant`、`daFootprintGasScalar`、`minBaseFee`、`eip1559Denominator`、`eip1559Elasticity`。
-- L2 `L1Block` predeploy 派生值：`operatorFeeScalar`、`operatorFeeConstant`、`daFootprintGasScalar`。
-- L2 最新区块：`baseFeePerGas`、`extraData`、`extraData.minBaseFee`、`extraData.denominator`、`extraData.elasticity`。
-- L2 `GasPriceOracle`：`isIsthmus()`、`isJovian()`、`getOperatorFee(21000)`。
+- L1 `SystemConfig` parameters: `operatorFeeScalar`, `operatorFeeConstant`, `daFootprintGasScalar`, `minBaseFee`, `eip1559Denominator`, and `eip1559Elasticity`.
+- Derived values in the L2 `L1Block` predeploy: `operatorFeeScalar`, `operatorFeeConstant`, and `daFootprintGasScalar`.
+- The latest L2 block: `baseFeePerGas`, `extraData`, `extraData.minBaseFee`, `extraData.denominator`, and `extraData.elasticity`.
+- L2 `GasPriceOracle`: `isIsthmus()`, `isJovian()`, and `getOperatorFee(21000)`.
 
 ### 5.2 verify-jovian-fees.sh
 
@@ -300,18 +301,18 @@ bash scripts/jovian/query-systemconfig-params.sh
 bash scripts/jovian/verify-jovian-fees.sh [private_key] [to]
 ```
 
-默认值：
+Defaults:
 
 - `private_key = $DEPLOY_PRIVATE_KEY`
 - `to = 0x000000000000000000000000000000000000dEaD`
 
-这是交易型验证脚本，会在 L2 发送一笔交易。执行前发送方必须有 L2 native token 余额。
+This transaction-based verification script sends one transaction on L2. The sender must have an L2 native token balance before it runs.
 
-验证内容：
+It verifies:
 
-- Jovian fork flag 是否打开。
-- receipt 是否包含 `operatorFeeScalar`、`operatorFeeConstant`、`daFootprintGasScalar`、`blobGasUsed`。
-- operator fee 计算值是否等于 `OperatorFeeVault` 余额增量。
+- Whether the Jovian fork flag is enabled.
+- Whether the receipt contains `operatorFeeScalar`, `operatorFeeConstant`, `daFootprintGasScalar`, and `blobGasUsed`.
+- Whether the calculated operator fee equals the `OperatorFeeVault` balance increase.
 
 ### 5.3 verify-min-base-fee.sh
 
@@ -319,72 +320,72 @@ bash scripts/jovian/verify-jovian-fees.sh [private_key] [to]
 bash scripts/jovian/verify-min-base-fee.sh [expected_min_base_fee_wei]
 ```
 
-这是区块型验证脚本，不发交易。
+This block-based verification script does not send transactions.
 
-验证内容：
+It verifies:
 
-- L1 `SystemConfig.minBaseFee()` 是否等于期望值。
-- L2 最新区块 `extraData` 是否是 Jovian 17 字节格式。
-- `extraData.minBaseFee` 是否等于期望值。
-- L2 `baseFeePerGas` 是否大于等于 `minBaseFee`。
+- Whether L1 `SystemConfig.minBaseFee()` equals the expected value.
+- Whether the latest L2 block's `extraData` uses the 17-byte Jovian format.
+- Whether `extraData.minBaseFee` equals the expected value.
+- Whether L2 `baseFeePerGas` is greater than or equal to `minBaseFee`.
 
-可调环境变量：
+Configurable environment variables:
 
 ```bash
 VERIFY_MIN_BASE_FEE_ATTEMPTS=60
 VERIFY_MIN_BASE_FEE_INTERVAL=2
 ```
 
-## 6. 验证原则
+## 6. Verification Principles
 
-Jovian 参数传播路径是：
+Jovian parameters propagate through:
 
 ```text
 L1 SystemConfig
   -> L1 ConfigUpdate event
   -> op-node derive
   -> L2 payload attributes
-  -> op-geth 出块
+  -> op-geth block production
   -> L2 block / L2 predeploy / RPC receipt
 ```
 
-不同参数的最佳验证位置不同：
+The best verification point depends on the parameter:
 
-- `minBaseFee`：优先验证 L2 block `extraData.minBaseFee` 和 `baseFeePerGas >= minBaseFee`。
-- `eip1559Denominator` / `eip1559Elasticity`：优先验证 L2 block `extraData`。
-- `operatorFeeScalar` / `operatorFeeConstant`：先查 L2 `L1Block`，再用 L2 交易 receipt 和 `OperatorFeeVault` delta 验证实际收费。
-- `daFootprintGasScalar`：先查 L2 `L1Block`，再用 receipt 中的 `daFootprintGasScalar` 和 `blobGasUsed` 验证交易路径。
+- `minBaseFee`: Prefer verifying L2 block `extraData.minBaseFee` and `baseFeePerGas >= minBaseFee`.
+- `eip1559Denominator` / `eip1559Elasticity`: Prefer verifying L2 block `extraData`.
+- `operatorFeeScalar` / `operatorFeeConstant`: Check L2 `L1Block` first, then verify the actual charge using an L2 transaction receipt and the `OperatorFeeVault` balance delta.
+- `daFootprintGasScalar`: Check L2 `L1Block` first, then verify the transaction path using `daFootprintGasScalar` and `blobGasUsed` in the receipt.
 
-receipt 里的 OP Stack 扩展字段是 RPC 查询时补充出来的字段，不是共识层 receipt RLP 原始字段。
+The OP Stack extension fields in receipts are added to RPC query responses; they are not part of the original consensus-layer receipt RLP.
 
-## 7. 常见问题
+## 7. Troubleshooting
 
-### L1 已设置，但 L2 还没变
+### L1 is configured, but L2 has not changed
 
-先确认 L1 设置交易已经成功，再等待 `op-node` derive 到对应 L1 block。可以过一会儿重新执行：
+First confirm that the L1 configuration transaction succeeded, then wait for `op-node` to derive the corresponding L1 block. Run this command again after a short delay:
 
 ```bash
 bash scripts/jovian/query-systemconfig-params.sh
 ```
 
-### receipt 里的 operator fee 字段是 null
+### Operator fee fields in the receipt are null
 
-如果 `operatorFeeScalar` 和 `operatorFeeConstant` 都是 `0`，查询 receipt 时可能看不到这两个字段或显示为 `null`。先设置非零 operator fee，再发新的 L2 交易验证。
+If both `operatorFeeScalar` and `operatorFeeConstant` are `0`, these fields may be absent or displayed as `null` when querying the receipt. Set a nonzero operator fee first, then send a new L2 transaction for verification.
 
-### minBaseFee 设置后看不到 baseFee 变化
+### baseFee does not change after setting minBaseFee
 
-如果设置的 `minBaseFee` 小于等于当前 L2 `baseFeePerGas`，clamp 效果不明显。可以先执行：
+If the configured `minBaseFee` is less than or equal to the current L2 `baseFeePerGas`, the clamp effect will not be obvious. First run:
 
 ```bash
 bash scripts/jovian/set-min-base-fee.sh
 ```
 
-脚本会打印当前 L2 `baseFeePerGas`，再选择一个更高的 `minBaseFee` 测试。
+The script prints the current L2 `baseFeePerGas`; then choose a higher `minBaseFee` for testing.
 
-### EIP-1559 参数能不能设置为 0
+### Can EIP-1559 parameters be set to 0?
 
-不能用 `set-eip1559-params.sh` 设置为 `0`。`SystemConfig.setEIP1559Params` 不接受 `0`，脚本也会提前拦截。
+You cannot set these parameters to `0` with `set-eip1559-params.sh`. `SystemConfig.setEIP1559Params` does not accept `0`, and the script rejects it before sending a transaction.
 
-### DA footprint 的 0 是什么意思
+### What does a DA footprint value of 0 mean?
 
-`daFootprintGasScalar` 在 L1 `SystemConfig` 中可以是 `0`，但 L2 derivation 会把它映射成默认值 `400`。所以 L1 看到 `0`、L2 看到 `400` 是预期行为。
+`daFootprintGasScalar` may be `0` in the L1 `SystemConfig`, but L2 derivation maps it to the default value `400`. Therefore, seeing `0` on L1 and `400` on L2 is expected.

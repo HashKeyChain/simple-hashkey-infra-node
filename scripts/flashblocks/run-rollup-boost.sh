@@ -1,28 +1,37 @@
 #!/bin/bash
 #
-# 纯组件启动器：rollup-boost —— op-node ↔ (op-geth fallback + op-rbuilder builder)
-# 之间的 Engine API 代理，并对外广播 flashblocks。含 debug server（set-execution-mode 热切）。
-# 由 chain-start.sh 编排调用，也可单独运行用于调试。
+# Component-only launcher for rollup-boost: the Engine API proxy between op-node and
+# (op-geth fallback + op-rbuilder builder), which also broadcasts Flashblocks externally.
+# Includes the debug server for live execution-mode switching.
+# Orchestrated by chain-start.sh; it can also run independently for debugging.
 #
-# FLASHBLOCKS_MODE 仅作启动初值：dry_run→dry-run 执行模式（builder payload 只校验不采用），
-# enabled→enabled（采用 builder payload）。off 态下本组件根本不启动（见 chain-start.sh）。
-# 运行时热切走 debug server 的 JSON-RPC（v0.7.11 没有 `debug set-execution-mode` 子命令）：
+# FLASHBLOCKS_MODE only sets the initial mode: dry_run -> dry-run (validate builder
+# payloads without using them), enabled -> enabled (use builder payloads). This component
+# is not started in off mode (see chain-start.sh).
+# Switch modes at runtime through the debug server's JSON-RPC API (v0.7.11 has no
+# `debug set-execution-mode` subcommand):
 #   curl -X POST -H 'Content-Type: application/json' \
 #     --data '{"jsonrpc":"2.0","id":1,"method":"debug_setExecutionMode","params":[{"execution_mode":"enabled"}]}' \
 #     http://localhost:$RB_DEBUG_PORT
-# 查当前模式用 debug_getExecutionMode。热切无需重启 op-node。
+# Use debug_getExecutionMode to query the current mode. Live switching does not require
+# restarting op-node.
 #
-# flag 已按 `bin/rollup-boost --help`（v0.7.11）校准：
-#   - 入站 engine server 是 --rpc-host/--rpc-port（无独立 --jwt-path；与 l2/builder 共用 jwt.txt）
-#   - 上游用 --l2-url / --builder-url，必须带 scheme（http://host:port）；v0.7.11 运行时按 url::Url
-#     解析，无 scheme 会 `Invalid URL: relative URL without a base` 直接崩溃（--help 默认虽写 host:port）
-#   - 广播端是 --flashblocks-host/--flashblocks-port；builder 入口 --flashblocks-builder-url（ws://）
-#   - 执行模式取值：enabled / dry-run / disabled（默认 enabled）
-#   - --metrics 开 Prometheus（默认关）。暴露 block_building_gas_delta /
-#     block_building_tx_count_delta（builder 相对 op-geth 的差值分布）、
-#     rpc_blocks_created{source=l2|builder}、rollup_boost_execution_mode。
-#     注意它不含区块哈希比对，也没有「块无效」计数 —— 那两项只能从日志算
-#     （见 scripts/flashblocks/verify/p2-dryrun.sh）。
+# Flags have been verified against `bin/rollup-boost --help` (v0.7.11):
+#   - The inbound Engine server uses --rpc-host/--rpc-port (there is no separate
+#     --jwt-path; it shares jwt.txt with l2/builder).
+#   - Upstreams use --l2-url/--builder-url and require a scheme (http://host:port).
+#     v0.7.11 parses them as url::Url at runtime and crashes with
+#     `Invalid URL: relative URL without a base` if the scheme is absent, even though
+#     --help shows a host:port default.
+#   - The broadcast endpoint uses --flashblocks-host/--flashblocks-port; the builder
+#     input uses --flashblocks-builder-url (ws://).
+#   - Execution modes are enabled / dry-run / disabled (default: enabled).
+#   - --metrics enables Prometheus (disabled by default), exposing
+#     block_building_gas_delta / block_building_tx_count_delta (distributions of
+#     builder deltas relative to op-geth),
+#     rpc_blocks_created{source=l2|builder}, and rollup_boost_execution_mode.
+#     Note that it does not compare block hashes or count invalid blocks; both must be
+#     derived from logs (see scripts/flashblocks/verify/p2-dryrun.sh).
 #
 source .envrc
 

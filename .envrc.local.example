@@ -2,178 +2,190 @@
 #                 Getting Started                #
 ##################################################
 
+# Copy this file to .envrc and fill only disposable local-development accounts.
+# Never put production keys, tokens, or credentials in this repository.
+
 # Deploy account
-export DEPLOY_ADDRESS=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
-export DEPLOY_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+export DEPLOY_ADDRESS=
+export DEPLOY_PRIVATE_KEY=
 
 # Admin account
-export GS_ADMIN_ADDRESS=0x2546BcD3c84621e976D8185a91A922aE77ECEc30
-export GS_ADMIN_PRIVATE_KEY=0xea6c44ac03bff858b476bba40716402b03e41b8e97e276d1baec7c37d42484a0
+export GS_ADMIN_ADDRESS=
+export GS_ADMIN_PRIVATE_KEY=
 
 # Batcher account
-export GS_BATCHER_ADDRESS=0xbDA5747bFD65F08deb54cb465eB87D40e51B197E
-export GS_BATCHER_PRIVATE_KEY=0x689af8efa8c651a91ad287602527f3af2fe9f6501a7ac4b061667b5a93e037fd
+export GS_BATCHER_ADDRESS=
+export GS_BATCHER_PRIVATE_KEY=
 
 # Proposer account
-export GS_PROPOSER_ADDRESS=0xdD2FD4581271e230360230F9337D5c0430Bf44C0
-export GS_PROPOSER_PRIVATE_KEY=0xde9be858da4a475276426320d5e9262ecfc3ba460bfac56360bfa6c4c28b4ee0
+export GS_PROPOSER_ADDRESS=
+export GS_PROPOSER_PRIVATE_KEY=
 
 # Sequencer account
-export GS_SEQUENCER_ADDRESS=0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199
-export GS_SEQUENCER_PRIVATE_KEY=0xdf57089febbacf7ba0bc227dafbffa9fc08a93fdc68e1e42411a14efcf23656e
+export GS_SEQUENCER_ADDRESS=
+export GS_SEQUENCER_PRIVATE_KEY=
 
 
 ##################################################
 #                Chain Information               #
 ##################################################
 
-# L1 chain information
+# L1 block time must be >= L2_BLOCK_TIME. A shorter channel duration keeps the safe head
+# close enough to the L1 head for op-node restart and fork-activation drills.
 export L1_CHAIN_ID=11155111
-export L1_BLOCK_TIME=12
+export L1_BLOCK_TIME=6
 
-# L2 chain information
 export L2_CHAIN_ID=5536
 export L2_BLOCK_TIME=2
+
 
 ##################################################
 #              op-node Configuration             #
 ##################################################
 
-# The kind of RPC provider, used to inform optimal transactions receipts
-# fetching. Valid options: alchemy, quicknode, infura, parity, nethermind,
-# debug_geth, erigon, basic, any.
+# alchemy, quicknode, infura, parity, nethermind, debug_geth, erigon, basic, any.
 export L1_RPC_KIND=alchemy
+
+
+##################################################
+#             op-batcher Configuration           #
+##################################################
+
+# Local chains have no L1 gas pressure; close channels frequently so the safe head follows L1.
+export MAX_CHANNEL_DURATION=5
+
 
 ##################################################
 #               Contract Deployment              #
 ##################################################
 
-# RPC URL for the L1 network to interact with
 export L1_RPC_URL=http://localhost:8545
-export L2_RPC_URL=http://localhost:8645
+
+# op-geth public and Engine API ports.
+export OP_GETH_HTTP_PORT=8645
+export OP_GETH_WS_PORT=8646
+export OP_GETH_AUTHRPC_PORT=8651
+export L2_RPC_URL=http://localhost:$OP_GETH_HTTP_PORT
+
 export OP_ROLLUP_PORT=9545
 export OP_BATCHER_PORT=9645
 export OP_NODE_RPC_URL=http://localhost:$OP_ROLLUP_PORT
 export OP_BATCHER_RPC_URL=http://localhost:$OP_BATCHER_PORT
 
+
 ##################################################
 #           Component Version References         #
 ##################################################
 
-# op-geth version (from ethereum-optimism/op-geth releases)
 export OP_GETH_REF=v1.101605.0
-
-# op-node version: local CGT Jovian branch.
-# It includes Isthmus/Jovian upgrade transaction bytecode replacements for
-# L1Block/GasPriceOracle and related gas adjustments.
 export OP_NODE_REF=cgt-jovian/v1.16.5
-
-# op-batcher version
 export OP_BATCHER_REF=op-batcher/v1.16.3
-
-# op-proposer version
 export OP_PROPOSER_REF=op-proposer/v1.10.0
-
-# op-challenger version: use cgt-jovian/v1.16.5 (same branch / Prague-aware op-geth
-# as op-node). A pre-Prague op-geth would miscompute L1 header hashes (EIP-7685
-# requestsHash) and break hash-based eth_call against a live L1.
 export OP_CHALLENGER_REF=cgt-jovian/v1.16.5
-
-# op-program version (for fault proofs)
-# Kept at beta.3 to stay compatible with the deployed MIPS / absolute prestate.
 export OP_PROGRAM_REF=op-contracts/v2.0.0-beta.3
-
-# cannon version (for fault proofs)
 export CANNON_REF=op-contracts/v2.0.0-beta.3
-
-# contracts-bedrock version
 export OP_CONTRACTS_REF=op-contracts/v2.0.0-beta.3
 
-# Contracts branch/ref used for contract upgrades
-export CONTRACTS_UPGRADE_REF=cgt-jovian/contracts-v2.0.0-beta.3
-
-# Go toolchain:
-#  - op-node(optimism monorepo) go.mod requires go 1.21, but go 1.23+
-#    is incompatible with fjl/memsize v0.0.2 (link: invalid reference to runtime.stopTheWorld),
-#    so use go 1.22 for op-node.
-#  - op-geth v1.101605.0 go.mod requires go 1.24.
-#  Use "go1.22.12+auto": minimum 1.22.12, auto-upgrade when go.mod requires newer.
+# op-node needs Go 1.22 because fjl/memsize v0.0.2 is incompatible with Go 1.23+.
+# op-geth requires Go 1.24, so allow Go to select a newer toolchain for that module.
 export GOTOOLCHAIN=go1.22.12+auto
 
+
+##################################################
+#                 Deployment Data                #
 ##################################################
 
-# Salt used via CREATE2 to determine implementation addresses
-# NOTE: If you want to deploy contracts from scratch you MUST reload this
-#       variable to ensure the salt is regenerated and the contracts are
-#       deployed to new addresses (otherwise deployment will fail)
+# Generate a fresh CREATE2 salt for each deployment.
 export IMPL_SALT=$(openssl rand -hex 32)
 
-# Name for the deployed network
 export DEPLOYMENT_CONTEXT=local-mainnet
 
-# Optional Tenderly details for simulation link during deployment
+# Optional external integrations.
 export TENDERLY_PROJECT=
 export TENDERLY_USERNAME=
-
-# Optional Etherscan API key for contract verification
 export ETHERSCAN_API_KEY=
 
-# Private key to use for contract deployments, you don't need to worry about
-# this for the Getting Started guide.
-# 0x70997970C51812dc3A010C7d01b50e0d17dc79C8, the account is from anvil's default test account.
-export PRIVATE_KEY=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+# Forge deployment key. Keep empty until a disposable funded local key is provided.
+export PRIVATE_KEY=
 
-# base path, used for the project
 export BASE_PATH=$PWD
 export CONTRACTS_BEDROCK_PATH=$BASE_PATH/optimism/packages/contracts-bedrock
 export OP_NODE_PATH=$BASE_PATH/optimism/op-node
 export PATH=$PATH:$BASE_PATH/bin
 
-# contracts-bedrock relate paths
+# Do not prepend ~/.local-go-toolchains here. macOS may block downloaded binaries and show
+# an authorization dialog. Deployment scripts select a working system Go explicitly.
+
 export CONTRACT_ADDRESSES_PATH=""
 export CHAIN_ID=$L2_CHAIN_ID
-
-# Generated paths for the deployment context.
 export DEPLOYMENT_CONFIG_PATH=$BASE_PATH/config/$DEPLOYMENT_CONTEXT
 
-# The generated files.
 export DEPLOY_CONFIG_PATH=$CONTRACTS_BEDROCK_PATH/deploy-config/$DEPLOYMENT_CONTEXT.json
 export DEPLOYMENT_OUTFILE=$CONTRACTS_BEDROCK_PATH/deployments/artifact.json
 export STATE_DUMP_PATH=$CONTRACTS_BEDROCK_PATH/deployments/state-dump-latest.json
 export OP_GETH_GENESIS_FILE=$CONTRACTS_BEDROCK_PATH/deployments/genesis.json
 export OP_NODE_ROLLUP_FILE=$CONTRACTS_BEDROCK_PATH/deployments/rollup.json
 
-# custom gas token. Fields: useCustomGasToken, customGasTokenAddress
+
+##################################################
+#              Chain Feature Settings            #
+##################################################
+
 export USE_CUSTOM_GAS_TOKEN=true
-# Leave empty to let deploy-contracts.sh deploy a fresh CGT and fill the address.
-# Set this only when reusing a token that already exists on the current L1.
+# Leave empty to deploy a fresh CGT on the current L1.
 export CUSTOM_GAS_TOKEN_ADDRESS=
 
-# Choice to use L2OutputOracle or FaultDisputeGame, false: L2OutputOracle, true: FaultDisputeGame. Field: useFaultProofs
 export USE_FAULT_PROOFS=true
 
-# Dispute game type (only used when USE_FAULT_PROOFS=true):
-#   0 = CANNON (permissionless, anyone can propose/challenge)
-#   1 = PERMISSIONED_CANNON (permissioned, only authorized proposer/challenger)
-# New chains start permissioned per official production practice: Portal.respectedGameType,
-# the proposer's --game-type and the anchor init script all follow this variable.
+# 0 = CANNON; 1 = PERMISSIONED_CANNON.
 export GAME_TYPE=1
 export RESPECTED_GAME_TYPE=$GAME_TYPE
 
-# ===== Hardfork activation times (single source of truth) =====
-# Configure once here. These FORK_*_TIME values are the single source of truth for
-# fork activation; both consumers derive from them:
-#   - rollup.json *_time: written by scripts/patch-rollup-config.sh (read by op-node)
-#   - op-geth --override.*: assembled at startup by scripts/run-op-geth.sh (read by op-geth)
-# Values are unix seconds; 0 means active at genesis; empty means the fork is not
-# started (rollup.json set to null, no op-geth override).
-#
-# A freshly set-up chain starts only from fjord: fjord=0 (active at genesis), the
-# other 4 forks left empty. To activate a new fork later: set the target timestamp
-# here, then run scripts/activate-fork.sh (auto stops the chain, syncs rollup.json,
-# restarts L2 with the new params). See scripts/jovian, doc/*upgrade_runbook.md.
+export CONTRACTS_UPGRADE_REF=cgt-jovian/contracts-v2.0.0-beta.3
+
+
+##################################################
+#       Hardfork Activation Times (Source)       #
+##################################################
+
+# 0 means active at genesis; empty means not scheduled. activate-fork.sh derives both
+# rollup.json and genesis.json from these values.
 export FORK_FJORD_TIME=0
 export FORK_GRANITE_TIME=
 export FORK_HOLOCENE_TIME=
 export FORK_ISTHMUS_TIME=
 export FORK_JOVIAN_TIME=
+
+
+##################################################
+#                    Flashblocks                 #
+##################################################
+
+# off / dry_run / enabled.
+export FLASHBLOCKS_MODE=off
+
+export RB_ENGINE_PORT=8551
+export RB_FLASHBLOCKS_WS_PORT=1112
+export RB_DEBUG_PORT=5555
+export RB_METRICS_PORT=9090
+
+export RBUILDER_AUTHRPC_PORT=8661
+export RBUILDER_HTTP_PORT=8663
+export RBUILDER_WS_PORT=8664
+export RBUILDER_FB_WS_PORT=1111
+export RBUILDER_P2P_PORT=30313
+
+export FB_PROXY_PORT=1113
+export FB_RPC_HTTP_PORT=8745
+export FB_RPC_AUTHRPC_PORT=8751
+export FB_RPC_OPNODE_PORT=9555
+export FB_RPC_P2P_PORT=30323
+export FB_RPC_OPNODE_P2P_TCP_PORT=9224
+
+export RBUILDER_OPNODE_PORT=9565
+export SEQ_P2P_TCP_PORT=9222
+export RBUILDER_OPNODE_P2P_TCP_PORT=9223
+
+export ROLLUP_BOOST_REF=v0.7.11
+export OP_RBUILDER_REF=op-rbuilder/v0.2.13
+export OP_RETH_REF=v1.9.3

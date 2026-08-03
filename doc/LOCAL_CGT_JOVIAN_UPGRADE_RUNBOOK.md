@@ -234,7 +234,7 @@ jq \
 ```
 
 Write the same fork times into `.envrc` as `OP_GETH_OVERRIDE_FLAGS`, so `op-geth` gets them
-through `scripts/chain-ops/run-op-geth.sh`（组件 flags 唯一真源，会 source .envrc 并追加该变量）：
+through `scripts/chain-ops/run-op-geth.sh` (the single source of truth for component flags; it sources `.envrc` and appends this variable):
 
 ```bash
 export FJORD GRANITE HOLOCENE ISTHMUS JOVIAN

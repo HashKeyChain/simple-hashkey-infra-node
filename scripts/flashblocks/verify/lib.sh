@@ -1,59 +1,69 @@
 #!/bin/bash
 #
-# Flashblocks 验证脚本公共库。被 verify/ 下各 p*.sh `source` 使用，本身不单独执行。
+# Shared library for Flashblocks verification scripts. It is sourced by the p*.sh
+# scripts under verify/ and is not executed independently.
 #
-# 这里只有四类东西：环境变量装载、结果输出与断言、cast / rg 的薄封装、wscheck 的构建。
-# 唯一的 Go 代码是 wscheck/（WebSocket 握手，shell 做不了），其余一律用现成命令：
-# 查链用 cast，数日志用 rg。
+# It contains only four categories: environment loading, result output and assertions,
+# thin wrappers around cast/rg, and the wscheck build. wscheck/ is the only Go code
+# because a shell cannot perform the WebSocket handshake; everything else uses existing
+# commands: cast for chain queries and rg for log counts.
 #
-# 日志计数一律看全量，不做「基线 - 窗口」的增量：验证总是针对新起的链，
-# 日志从零开始，全量条数就是这条链的真实情况。若在跑了很久、重启过多次的链上复用
-# 这些脚本，历史错误会一直算进来 —— 那种场景下先清 data/logs 再验。
+# Log counts use complete logs rather than baseline-to-window deltas. Verification
+# targets a newly started chain whose logs begin empty, so complete counts represent the
+# true state of that chain. When reusing these scripts on a long-running chain that has
+# restarted many times, historical errors remain included; clear data/logs first.
 #
-# 约定：
-#   - 断言失败不中断脚本，继续跑完所有检查，最后由 summary 决定退出码；
-#     这样一次运行能看到全部问题，而不是修一个跑一次。
-#   - 所有 $VAR 紧跟中文/全角字符处必须写 ${VAR}：bash 3.2 在 UTF-8 locale 下
-#     会把全角字符首字节吃进变量名，配合 set -u 直接以 "unbound variable" 退出。
+# Conventions:
+#   - Failed assertions do not stop the script. All checks run, and summary determines
+#     the exit code, so one run reveals every issue.
+#   - Use ${VAR} when a variable is immediately followed by non-ASCII punctuation:
+#     Bash 3.2 under a UTF-8 locale may absorb the punctuation's first byte into the
+#     variable name and exit with "unbound variable" when set -u is active.
 
-# ---------- 路径与环境 ----------
+# ---------- Paths and environment ----------
 VERIFY_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
 REPO_ROOT=$(cd "$VERIFY_DIR/../../.." && pwd)
 cd "$REPO_ROOT"
-# .envrc 里有未定义即引用的变量，装载时先关掉 set -u
+# .envrc references some variables before they are defined, so disable set -u while
+# loading it.
 set +u
 # shellcheck disable=SC1091
 source .envrc >/dev/null 2>&1
 set -u
 
-# .envrc 里是 `export BASE_PATH=$PWD`，会把上面算好的值覆盖成「当前目录」。
-# 正常调用时两者相同，但若在别的目录里 source 过 .envrc，错值会经 export 传进来。
-# 这里一律用自己按脚本位置算出的仓库根，不信任环境里的 BASE_PATH。
+# .envrc contains `export BASE_PATH=$PWD`, which overwrites the value calculated above
+# with the current directory. They match during normal invocation, but sourcing .envrc
+# elsewhere can export an incorrect value. Always use the repository root derived from
+# this script's location rather than trusting BASE_PATH from the environment.
 BASE_PATH="$REPO_ROOT"
 
 DATA_DIR="$BASE_PATH/data"
 LOG_DIR="$DATA_DIR/logs"
+PID_DIR="$DATA_DIR/pids"
 CFG_DIR="${DEPLOYMENT_CONFIG_PATH:-$BASE_PATH/config/${DEPLOYMENT_CONTEXT:-local-mainnet}}"
 
-# 各组件对外地址（端口一律取 .envrc，避免脚本内硬编码漂移）
+# External component addresses (always obtain ports from .envrc to avoid hard-coded drift).
 L1_RPC="${L1_RPC_URL:-http://localhost:8545}"
 L2_RPC="${L2_RPC_URL:-http://localhost:8645}"
 RB_RPC="http://localhost:${RBUILDER_HTTP_PORT:-8663}"
 OPNODE_RPC="${OP_NODE_RPC_URL:-http://localhost:9545}"
 RB_DEBUG="http://localhost:${RB_DEBUG_PORT:-5555}"
+RB_PROXY="http://localhost:${RB_ENGINE_PORT:-8551}"
 FB_RPC="http://localhost:${FB_RPC_HTTP_PORT:-8745}"
+FB_OPNODE_RPC="http://localhost:${FB_RPC_OPNODE_PORT:-9555}"
 JWT_FILE="${OP_GETH_DATA_PATH:-$DATA_DIR/op-geth}/jwt.txt"
 
-# 日志目录找不到时必须立刻停。否则 log_count 对每个不存在的文件都返回 0，
-# 「路径错了」和「一条都没有」就变成同样的结果，所有计数类检查会集体假 PASS。
+# Stop immediately if the log directory is missing. Otherwise, log_count returns 0 for
+# every absent file, making an incorrect path indistinguishable from no matches and
+# causing all count-based checks to pass incorrectly.
 if [ ! -d "$LOG_DIR" ]; then
-  echo "FATAL: 日志目录不存在: $LOG_DIR" >&2
-  echo "       仓库根被解析为: $BASE_PATH" >&2
-  echo "       链没启动过，或脚本被移出了 scripts/flashblocks/verify/。" >&2
+  echo "FATAL: log directory does not exist: $LOG_DIR" >&2
+  echo "       resolved repository root: $BASE_PATH" >&2
+  echo "       the chain has never started, or this script was moved out of scripts/flashblocks/verify/." >&2
   exit 1
 fi
 
-# ---------- 输出 ----------
+# ---------- Output ----------
 if [ -t 1 ]; then
   C_RED=$'\033[31m'; C_GRN=$'\033[32m'; C_YEL=$'\033[33m'; C_BLU=$'\033[36m'; C_DIM=$'\033[2m'; C_OFF=$'\033[0m'
 else
@@ -84,22 +94,22 @@ fail() {
     - $*"
 }
 
-# assert_eq <期望> <实际> <描述>
+# assert_eq <expected> <actual> <description>
 assert_eq() {
-  if [ "$1" = "$2" ]; then pass "$3  ($2)"; else fail "$3  期望=[$1] 实际=[$2]"; fi
+  if [ "$1" = "$2" ]; then pass "$3  ($2)"; else fail "$3  expected=[$1] actual=[$2]"; fi
 }
 
-# assert_ne <不应等于> <实际> <描述>
+# assert_ne <unexpected> <actual> <description>
 assert_ne() {
-  if [ "$1" != "$2" ]; then pass "$3  ($2)"; else fail "$3  不应等于 [$1]"; fi
+  if [ "$1" != "$2" ]; then pass "$3  ($2)"; else fail "$3  must not equal [$1]"; fi
 }
 
-# assert_num_le <实际> <上限> <描述>
+# assert_num_le <actual> <upper-bound> <description>
 assert_num_le() {
   if [ "$1" -le "$2" ] 2>/dev/null; then pass "$3  ($1 <= $2)"; else fail "$3  ($1 > $2)"; fi
 }
 
-# assert_num_ge <实际> <下限> <描述>
+# assert_num_ge <actual> <lower-bound> <description>
 assert_num_ge() {
   if [ "$1" -ge "$2" ] 2>/dev/null; then pass "$3  ($1 >= $2)"; else fail "$3  ($1 < $2)"; fi
 }
@@ -107,10 +117,10 @@ assert_num_ge() {
 summary() {
   echo ""
   echo "${C_BLU}------------------------------------------------------------${C_OFF}"
-  printf "  结果: ${C_GRN}PASS=%d${C_OFF}  ${C_RED}FAIL=%d${C_OFF}  ${C_YEL}WARN=%d${C_OFF}  ${C_DIM}SKIP=%d${C_OFF}\n" \
+  printf "  Results: ${C_GRN}PASS=%d${C_OFF}  ${C_RED}FAIL=%d${C_OFF}  ${C_YEL}WARN=%d${C_OFF}  ${C_DIM}SKIP=%d${C_OFF}\n" \
     "$PASS_N" "$FAIL_N" "$WARN_N" "$SKIP_N"
   if [ "$FAIL_N" -gt 0 ]; then
-    echo "  ${C_RED}未通过项:${C_OFF}${FAILED_ITEMS}"
+    echo "  ${C_RED}Failed checks:${C_OFF}${FAILED_ITEMS}"
     echo "${C_BLU}------------------------------------------------------------${C_OFF}"
     return 1
   fi
@@ -122,13 +132,13 @@ require_cmd() {
   local missing=""
   for c in "$@"; do command -v "$c" >/dev/null 2>&1 || missing="$missing $c"; done
   if [ -n "$missing" ]; then
-    echo "${C_RED}Error${C_OFF}: 缺少命令:${missing}" >&2
+    echo "${C_RED}Error${C_OFF}: missing commands:${missing}" >&2
     return 1
   fi
 }
 
-# ---------- 链查询（全部走 cast）----------
-# 块高；不可达或返回非数字时输出 -1，便于调用方用整数比较
+# ---------- Chain queries (all through cast) ----------
+# Block height; output -1 when unreachable or non-numeric so callers can compare integers.
 rpc_bn() {
   local n; n=$(cast bn --rpc-url "$1" 2>/dev/null || echo "")
   case "$n" in ''|*[!0-9]*) echo -1 ;; *) echo "$n" ;; esac
@@ -136,9 +146,10 @@ rpc_bn() {
 
 rpc_alive() { [ "$(rpc_bn "$1")" -ge 0 ]; }
 
-# 某块的 blockHash；取不到输出空串。
-# 只比 hash 就够断定两条链在该高度完全一致 —— stateRoot 是块头字段，已被 hash 覆盖。
-# 不一致时再调 block_state_root 拿 stateRoot 来区分「执行结果不同」和「只是块头不同」。
+# Block hash at a given height; output an empty string if unavailable.
+# Comparing the hash is sufficient to establish that two chains are identical at that
+# height because stateRoot is part of the hashed block header. On mismatch, query
+# block_state_root to distinguish different execution results from other header changes.
 block_hash()       { cast block "$2" -f hash      --rpc-url "$1" 2>/dev/null; }
 block_state_root() { cast block "$2" -f stateRoot --rpc-url "$1" 2>/dev/null; }
 
@@ -149,42 +160,100 @@ jsonrpc() {
     --data "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"${method}\",\"params\":${params}}" "$url" 2>/dev/null
 }
 
-# rollup-boost 当前执行模式；未运行时输出 none
+# Current rollup-boost execution mode; output none when it is not running.
 boost_mode() {
   local r; r=$(jsonrpc "$RB_DEBUG" debug_getExecutionMode)
   [ -z "$r" ] && { echo none; return; }
   echo "$r" | rg -o '"execution_mode":"([a-z_]+)"' -r '$1'
 }
 
-# 热切执行模式，无需重启任何组件。<enabled|dry_run|disabled>
-# 输出切换后的实际模式，便于调用方确认。
+# Switch execution modes live without restarting components. <enabled|dry_run|disabled>
+# Output the resulting mode so the caller can confirm it.
 set_boost_mode() {
   jsonrpc "$RB_DEBUG" debug_setExecutionMode "[{\"execution_mode\":\"$1\"}]" >/dev/null
   sleep 1
   boost_mode
 }
 
-# ---------- 日志 ----------
-# reth / rollup-boost 的日志带 ANSI 颜色码，统计前必须剥掉
+# Rewrite FLASHBLOCKS_MODE in .envrc. <off|dry_run|enabled>
+# That value is the *initial* mode, deciding which components chain-start brings up; use
+# set_boost_mode to switch a running chain. python instead of sed -i because the BSD and
+# GNU flag syntaxes differ and this has to replace the line if present and append if not.
+set_envrc_mode() {
+  _FB_MODE="$1" python3 - <<'PY'
+import os
+import re
+from pathlib import Path
+
+mode = os.environ["_FB_MODE"]
+path = Path(".envrc")
+text = path.read_text()
+pattern = re.compile(r"^export FLASHBLOCKS_MODE=.*$", re.M)
+replacement = f"export FLASHBLOCKS_MODE={mode}"
+path.write_text(pattern.sub(replacement, text) if pattern.search(text) else text.rstrip("\n") + "\n" + replacement + "\n")
+PY
+}
+
+# Height of one head reported by optimism_syncStatus.
+# sync_head <opnode-rpc> <unsafe_l2|safe_l2|finalized_l2>; output -1 when unavailable.
+# cast rpc already unwraps the result field, so jq only has to reach one level in.
+sync_head() {
+  local n
+  n=$(cast rpc optimism_syncStatus --rpc-url "$1" 2>/dev/null | jq -r ".${2}.number" 2>/dev/null)
+  case "$n" in ''|*[!0-9]*) echo -1 ;; *) echo "$n" ;; esac
+}
+
+# ---------- Logs ----------
+# Launch scripts pass --color never to reth-based components, so new logs contain no
+# ANSI color codes. Keep stripping colors for old logs written before that flag was
+# added; rollup-boost logs have always been clean.
 strip_ansi() { sed 's/\x1b\[[0-9;]*m//g' "$1" 2>/dev/null; }
 
-# log_count <日志名(不含.log)> <正则>  —— 全量匹配条数，日志不存在输出 0
+# log_count <log-name-without-.log> <regex> -- total matches; output 0 if absent.
 log_count() {
   local f="$LOG_DIR/$1.log"
   [ -f "$f" ] || { echo 0; return; }
   strip_ansi "$f" | rg -c "$2" 2>/dev/null || echo 0
 }
 
-# ---------- wscheck（唯一的 Go 代码：WebSocket 握手 shell 做不到）----------
+# ---------- Go helpers (the two things a shell cannot do) ----------
+# wscheck completes the WebSocket handshake; txprobe measures preconfirmation latency on a
+# millisecond clock. Everything else in verify/ is cast and rg.
 WSCHECK="$VERIFY_DIR/bin/wscheck"
+TXPROBE="$VERIFY_DIR/bin/txprobe"
 
-# 源码比二进制新就重建。零外部依赖，build 一两秒，
-# 不值得让使用者多记一个「先编译」的步骤。
-if [ ! -x "$WSCHECK" ] || [ -n "$(find "$VERIFY_DIR/wscheck" -name '*.go' -newer "$WSCHECK" 2>/dev/null)" ]; then
-  if command -v go >/dev/null 2>&1; then
-    echo "构建 wscheck ..." >&2
-    (cd "$VERIFY_DIR/wscheck" && go build -o "$WSCHECK" .) || echo "WARN: wscheck 构建失败，广播流检查会被跳过" >&2
-  else
-    echo "WARN: 没有 Go 工具链，无法构建 wscheck，广播流检查会被跳过" >&2
+# .envrc prepends a pinned Go toolchain to PATH for building the op-stack, and that binary
+# is not always usable: on macOS, Family Controls can deny execution of a downloaded
+# toolchain with EPERM. `command -v` cannot see that, because the file is still marked
+# executable, so ask each candidate for its version and take the first that answers.
+# GOTOOLCHAIN=local is required even for `go version`: .envrc also pins GOTOOLCHAIN, and
+# without this a working Go would try to switch to the pinned release and go download it.
+find_go() {
+  local candidate
+  for candidate in go /usr/local/go/bin/go /opt/homebrew/bin/go; do
+    command -v "$candidate" >/dev/null 2>&1 || continue
+    GOTOOLCHAIN=local "$candidate" version >/dev/null 2>&1 && { echo "$candidate"; return 0; }
+  done
+  return 1
+}
+
+# build_go_tool <source-dir-name> <output-path>
+# Rebuild when sources are newer than the binary: the build takes a couple of seconds and
+# needs no network, so nobody should have to remember a separate build step.
+#   -mod=vendor      explicit, so external GOFLAGS cannot send Go to the network
+#   GOTOOLCHAIN=local  build with whatever toolchain we found instead of switching to the
+#                      version .envrc pins, which is the one that may be unusable
+build_go_tool() {
+  local src="$VERIFY_DIR/$1" out="$2" go_bin
+  [ -x "$out" ] && [ -z "$(find "$src" -name '*.go' -newer "$out" 2>/dev/null)" ] && return 0
+  if ! go_bin=$(find_go); then
+    echo "WARN: no usable Go toolchain; checks that need $1 will be skipped" >&2
+    return 1
   fi
-fi
+  echo "Building $1 ..." >&2
+  (cd "$src" && GOTOOLCHAIN=local "$go_bin" build -mod=vendor -o "$out" .) \
+    || { echo "WARN: $1 build failed; checks that need it will be skipped" >&2; return 1; }
+}
+
+build_go_tool wscheck "$WSCHECK"
+build_go_tool txprobe "$TXPROBE"

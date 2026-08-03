@@ -1,6 +1,0 @@
-# 独立的最小 foundry 工程，只为编译 src/VerifyTarget.sol。
-# 刻意不引用仓库根的 optimism/packages/contracts-bedrock 配置，避免拖进整套依赖。
-[profile.default]
-src = "src"
-out = "out"
-libs = []

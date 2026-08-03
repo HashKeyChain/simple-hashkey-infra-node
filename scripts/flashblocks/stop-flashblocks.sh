@@ -1,13 +1,14 @@
 #!/bin/bash
 #
-# 停止所有 flashblocks 组件（由 chain-stop.sh `source`，需其已定义 stop_pid /
-# stop_matching_processes，并已设 PID_DIR / DATA_DIR 及相关端口变量）。
-# 在核心 op-node/op-geth 之前调用（与启动顺序相反）。
+# Stop all Flashblocks components. This script is sourced by chain-stop.sh, which must
+# define stop_pid/stop_matching_processes and set PID_DIR, DATA_DIR, and the related
+# port variables. Run it before stopping the core op-node/op-geth processes, in reverse
+# startup order.
 #
-# 覆盖组件：fb-rpc-opnode、fb-rpc-reth、fb-proxy、rollup-boost、
-#           op-rbuilder-opnode、op-rbuilder。
+# Components: fb-rpc-opnode, fb-rpc-reth, fb-proxy, rollup-boost,
+#             op-rbuilder-opnode, op-rbuilder.
 
-# 先停本轮 chain-start 记录的 pid 文件。
+# First stop processes recorded in PID files by the current chain-start run.
 for name in fb-rpc-opnode fb-rpc-reth fb-proxy rollup-boost op-rbuilder-opnode op-rbuilder; do
   pid_file="$PID_DIR/${name}.pid"
   if [ -f "$pid_file" ]; then
@@ -17,7 +18,8 @@ for name in fb-rpc-opnode fb-rpc-reth fb-proxy rollup-boost op-rbuilder-opnode o
   fi
 done
 
-# 再按命令行特征清理 pid 文件被覆盖的残留进程（needle 以实际 ps 命令行为准）。
+# Then remove residual processes whose PID files were overwritten by matching their
+# command lines (needles correspond to the actual ps command lines).
 stop_matching_processes "fb-rpc-opnode"      "op-node "                      "--rpc.port=${FB_RPC_OPNODE_PORT:-9555}"
 stop_matching_processes "op-rbuilder-opnode" "op-node "                      "--rpc.port=${RBUILDER_OPNODE_PORT:-9565}"
 stop_matching_processes "fb-rpc-reth"        "op-reth "                      "$DATA_DIR/op-reth"

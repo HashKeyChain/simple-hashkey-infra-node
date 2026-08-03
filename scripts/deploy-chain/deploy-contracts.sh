@@ -1,7 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# 若由 chain-setup 调用且已设置，不要被 .envrc 覆盖（如 local 用 localhost L1、config/local）
+# Preserve values already set by chain-setup instead of overwriting them from .envrc
+# (for example, local uses the localhost L1 and config/local).
 _CALLER_L1_RPC="${L1_RPC_URL:-}"
 _CALLER_DEPLOYMENT_CONTEXT="${DEPLOYMENT_CONTEXT:-}"
 source .envrc
@@ -11,6 +12,37 @@ if [ -n "$_CALLER_DEPLOYMENT_CONTEXT" ]; then
   export DEPLOYMENT_CONFIG_PATH="$BASE_PATH/config/$DEPLOYMENT_CONTEXT"
   export DEPLOY_CONFIG_PATH="$CONTRACTS_BEDROCK_PATH/deploy-config/$DEPLOYMENT_CONTEXT.json"
 fi
+
+# Prefer system-installed Go binaries. A downloaded toolchain under ~/.local-go-toolchains
+# can be blocked by macOS Family Controls and trigger an authorization dialog.
+find_go() {
+  local candidate path_go
+  for candidate in /usr/local/go/bin/go /opt/homebrew/bin/go /usr/bin/go; do
+    [ -x "$candidate" ] || continue
+    if env -u GOROOT GOTOOLCHAIN=local "$candidate" version >/dev/null 2>&1; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+
+  path_go=$(command -v go 2>/dev/null || true)
+  case "$path_go" in
+    ""|*/.local-go-toolchains/*) ;;
+    *)
+      if env -u GOROOT GOTOOLCHAIN=local "$path_go" version >/dev/null 2>&1; then
+        echo "$path_go"
+        return 0
+      fi
+      ;;
+  esac
+  return 1
+}
+
+if ! GO_BIN=$(find_go); then
+  echo "ERROR: no usable system Go toolchain found." >&2
+  exit 1
+fi
+echo "Using Go: $GO_BIN ($(env -u GOROOT GOTOOLCHAIN=local "$GO_BIN" version))"
 
 mkdir -p $DEPLOYMENT_CONFIG_PATH
 
@@ -61,23 +93,25 @@ fi
 # Init deployment config.
 sh scripts/getting-started/config.sh
 
-# config.sh 固定把配置写到 deploy-config/getting-started.json；
-# 若当前 context 不是 getting-started（如 local），复制成对应文件名，
-# 否则下面的 jq 和 Deploy.s.sol 会按 $DEPLOY_CONFIG_PATH 找不到 <context>.json 而报错。
+# config.sh always writes configuration to deploy-config/getting-started.json.
+# If the current context is not getting-started (for example, local), copy it to the corresponding filename;
+# otherwise, jq and Deploy.s.sol below will look up <context>.json through $DEPLOY_CONFIG_PATH and fail.
 if [ "$(basename "$DEPLOY_CONFIG_PATH")" != "getting-started.json" ]; then
   cp deploy-config/getting-started.json "$DEPLOY_CONFIG_PATH"
 fi
 
 # Add custom gas token and fault proofs config to deploy config
-# respectedGameType：0=CANNON(permissionless)，1=PERMISSIONED_CANNON(permissioned)。
-# 仅 fault proofs 生效；缺省 1（新链按官方生产实践以 permissioned 起步）。
-# 在此脚本层注入，避免改动 optimism 子模块（子模块在部署时会被 git checkout 重置）。
+# respectedGameType: 0=CANNON (permissionless), 1=PERMISSIONED_CANNON (permissioned).
+# This applies only to fault proofs and defaults to 1, starting new chains in permissioned mode
+# in line with official production practice. Inject it in this script to avoid modifying the optimism
+# submodule, which git checkout resets during deployment.
 RESPECTED_GAME_TYPE="${RESPECTED_GAME_TYPE:-1}"
-# faultGameGenesisOutputRoot：AnchorStateRegistry 的初始 anchor（第一个 dispute game 的博弈起点）。
-# 缺省用官方 op-deployer 同款非零占位 0xdead…000：只要非零就能过 game 初始化的
-# AnchorRootNotFound 检查，proposer 首次即可建 game，无需事后种 anchor。
-# 第一个诚实 game 解决后，anchor 会经 tryUpdateAnchorState 前移为真实 root，占位退役。
-# 想用真实创世 root，可导出 FAULT_GAME_GENESIS_OUTPUT_ROOT 覆盖（或改回 0 走脚本种 anchor）。
+# faultGameGenesisOutputRoot: the initial AnchorStateRegistry anchor and starting point of the first dispute game.
+# By default, use the same nonzero 0xdead...000 placeholder as the official op-deployer. Any nonzero value passes
+# the AnchorRootNotFound check during game initialization, allowing the proposer to create its first game without
+# seeding the anchor afterward. Once the first honest game resolves, tryUpdateAnchorState advances the anchor
+# to the real root and retires the placeholder. To use the real genesis root, export FAULT_GAME_GENESIS_OUTPUT_ROOT
+# to override this value (or restore 0 to let the script seed the anchor).
 FAULT_GAME_GENESIS_OUTPUT_ROOT="${FAULT_GAME_GENESIS_OUTPUT_ROOT:-0xdead000000000000000000000000000000000000000000000000000000000000}"
 echo "Adding custom gas token and fault proofs config..."
 jq --arg use_cgt "$USE_CUSTOM_GAS_TOKEN" \
@@ -101,7 +135,7 @@ echo "  - Respected game type: $RESPECTED_GAME_TYPE ($([ "$RESPECTED_GAME_TYPE" 
 echo "  - Fault game genesis output root: $FAULT_GAME_GENESIS_OUTPUT_ROOT"
 
 # Build and deploy contracts.
-# forge install 内部用 git clone/submodule，git 经常长时间无输出，属正常现象
+# forge install uses git clone/submodule internally, and long periods without Git output are normal.
 echo "Installing Forge dependencies (may take 2-5 min, git may have little output)..."
 forge install
 echo "Dependencies OK. Building..."
@@ -148,12 +182,13 @@ export CONTRACT_ADDRESSES_PATH=$DEPLOYMENT_OUTFILE
 forge script scripts/L2Genesis.s.sol:L2Genesis --sig 'runWithStateDump()'
 
 # Init rollup config and genesis file.
-# 用 submodule 当前 checkout（$OP_CONTRACTS_REF = op-contracts/v2.0.0-beta.2）的 op-node 生成配置，
-# 因为它认识 deploy-config 里的 CGT 字段（customGasTokenAddress 等）。
-# 注意：生成的 rollup.json 可能含“启动用的 op-node（cgt-jovian/v1.16.5）”不认识的字段
-# （如 da_challenge_contract_address），需在 chain-start 前手动从 config/<context>/rollup.json 删除。
+# Generate configuration with op-node from the submodule's current checkout
+# ($OP_CONTRACTS_REF = op-contracts/v2.0.0-beta.2) because it recognizes CGT fields in deploy-config,
+# such as customGasTokenAddress. Note that the generated rollup.json may contain fields not recognized
+# by the runtime op-node (cgt-jovian/v1.16.5), such as da_challenge_contract_address; remove them manually
+# from config/<context>/rollup.json before chain-start.
 cd $BASE_PATH/optimism/op-node
-go run ./cmd genesis l2 \
+env -u GOROOT GOTOOLCHAIN=local "$GO_BIN" run ./cmd genesis l2 \
   --deploy-config $DEPLOY_CONFIG_PATH \
   --l1-deployments $DEPLOYMENT_OUTFILE \
   --l2-allocs $STATE_DUMP_PATH \

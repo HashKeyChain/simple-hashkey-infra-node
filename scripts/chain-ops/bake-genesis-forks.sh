@@ -1,20 +1,21 @@
 #!/bin/bash
 #
-# 把硬分叉时间「烘入」genesis.json，使其成为 op-geth 与 reth 系（op-rbuilder/op-reth）
-# 共用的唯一分叉真源。
+# Bake hardfork times into genesis.json, making it the single source of fork truth shared by op-geth
+# and the reth family (op-rbuilder/op-reth).
 #
-# 背景：reth 没有 op-geth 的 --override.* 运行时分叉覆盖，只能从 --chain 指的 JSON 读分叉表。
-# 因此不再让 geth 用启动参数配置分叉，改为把分叉时间写进 genesis.config，geth init 与 reth
-# 用同一份 genesis.json 启动，创世 hash 一致、分叉表一致，无需额外配置。
+# Background: reth does not support op-geth's --override.* runtime fork overrides and can only read the fork
+# schedule from the JSON specified by --chain. Therefore, fork times are written to genesis.config instead of
+# configuring geth through startup flags. Both geth init and reth use the same genesis.json, ensuring the same
+# genesis hash and fork schedule without additional configuration.
 #
-# 单一真源是 .envrc 的 FORK_*_TIME —— 与 activate-fork.sh 写 rollup.json（sync_fork）用的是
-# 同一批变量。genesis 与 rollup 各自独立地从 .envrc 派生，绝不从对方（二手产物）取值，
-# 因此两者不可能相互漂移。本脚本通常由 activate-fork.sh 在激活分叉时调用。
+# The single source of truth is .envrc's FORK_*_TIME values, the same variables activate-fork.sh uses to
+# write rollup.json via sync_fork. Genesis and rollup are each derived independently from .envrc and never
+# from one another as secondary artifacts, preventing them from drifting. activate-fork.sh normally invokes this script.
 #
-# op-geth 约束：genesis 里出现 isthmusTime 时，必须同时有 pragueTime=isthmusTime，否则 init 报错。
+# op-geth constraint: if genesis contains isthmusTime, it must also contain pragueTime=isthmusTime or init fails.
 #
-# 语义：变量非空 → 写入该 *Time；变量为空 → 删除该 key（表示未调度）。幂等，可反复运行；
-# 原地覆盖 genesis.json（原子写）。
+# Semantics: a nonempty variable writes the corresponding *Time; an empty variable deletes that key
+# (meaning unscheduled). The operation is idempotent and can be repeated; genesis.json is replaced atomically in place.
 #
 source .envrc
 set -e
@@ -22,17 +23,17 @@ set -e
 CFG="${DEPLOYMENT_CONFIG_PATH:-$BASE_PATH/config/$DEPLOYMENT_CONTEXT}"
 GEN="${1:-$CFG/genesis.json}"
 
-[ -f "$GEN" ] || { echo "genesis 不存在: $GEN"; exit 1; }
+[ -f "$GEN" ] || { echo "genesis does not exist: $GEN"; exit 1; }
 
-# 分叉真源：.envrc 的 FORK_*_TIME（与 rollup.json 同源）。
+# Fork source of truth: .envrc FORK_*_TIME values (the same source used by rollup.json).
 G="${FORK_GRANITE_TIME:-}"
 H="${FORK_HOLOCENE_TIME:-}"
 I="${FORK_ISTHMUS_TIME:-}"
 J="${FORK_JOVIAN_TIME:-}"
 
 TMP="$(mktemp)"
-# 变量非空 → 写入对应 camelCase *Time；为空 → 删除该 key。
-# 有 isthmusTime 时补 pragueTime=isthmusTime；无则一并删除 pragueTime（op-geth 硬性要求）。
+# A nonempty variable writes the corresponding camelCase *Time; an empty value deletes the key.
+# Add pragueTime=isthmusTime when isthmusTime exists; otherwise delete pragueTime as well (an op-geth requirement).
 jq --arg g "$G" --arg h "$H" --arg i "$I" --arg j "$J" '
   def setfork($key; $v): if $v == "" then del(.config[$key]) else .config[$key] = ($v | tonumber) end;
   setfork("graniteTime";  $g)
@@ -46,5 +47,5 @@ jq --arg g "$G" --arg h "$H" --arg i "$I" --arg j "$J" '
 
 mv "$TMP" "$GEN"
 
-echo "分叉已烘入 genesis: ${GEN}（源：.envrc FORK_*_TIME）"
+echo "Fork schedule baked into genesis: ${GEN} (source: .envrc FORK_*_TIME)"
 jq -c '.config | {graniteTime, holoceneTime, isthmusTime, jovianTime, pragueTime}' "$GEN"

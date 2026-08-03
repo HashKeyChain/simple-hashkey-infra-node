@@ -1,18 +1,18 @@
 #!/bin/bash
 #
-# 一键生成 rollup.json 和 genesis.json（部署 L1 合约并生成 L2 配置）。
-# 不启动 L2 节点，仅完成配置生成。
+# Generate rollup.json and genesis.json in one command by deploying L1 contracts and generating the L2 configuration.
+# This generates configuration only; it does not start the L2 nodes.
 #
-# 用法:
+# Usage:
 #   bash scripts/chain-setup.sh [local|remote]
 #
-# 参数:
-#   local  - 本地环境：若 L1 未运行则自动启动 anvil，再部署合约并生成配置
-#   remote - 远端环境：使用 .envrc 中的 L1_RPC_URL，直接部署并生成配置
+# Arguments:
+#   local  - Local environment: start anvil automatically if L1 is not running, then deploy contracts and generate configuration
+#   remote - Remote environment: use L1_RPC_URL from .envrc to deploy contracts and generate configuration directly
 #
-# 若不传参，则根据 L1_RPC_URL 自动判断（含 localhost/127.0.0.1 视为 local）。
+# If omitted, the environment is detected automatically from L1_RPC_URL (localhost/127.0.0.1 is treated as local).
 #
-# 生成文件位置:
+# Generated file locations:
 #   - $DEPLOYMENT_CONFIG_PATH/rollup.json
 #   - $DEPLOYMENT_CONFIG_PATH/genesis.json
 #   - $DEPLOYMENT_CONFIG_PATH/artifact.json
@@ -27,7 +27,7 @@ cd "$BASE_PATH"
 
 source .envrc
 
-# 解析运行环境：local | remote
+# Resolve the runtime environment: local | remote
 CHAIN_ENV="${1:-}"
 
 if [ -z "$CHAIN_ENV" ]; then
@@ -44,7 +44,7 @@ if [ "$CHAIN_ENV" != "local" ] && [ "$CHAIN_ENV" != "remote" ]; then
   exit 1
 fi
 
-# local 时：用本机 anvil；生成文件目录仍按 .envrc 的 DEPLOYMENT_CONTEXT。
+# In local mode, use the local anvil instance; the generated-file directory still follows DEPLOYMENT_CONTEXT from .envrc.
 if [ "$CHAIN_ENV" = "local" ]; then
   export L1_RPC_URL="http://localhost:8545"
   export DEPLOYMENT_CONFIG_PATH="$BASE_PATH/config/$DEPLOYMENT_CONTEXT"
@@ -56,7 +56,7 @@ echo "L1_RPC_URL=$L1_RPC_URL"
 echo "DEPLOYMENT_CONFIG_PATH=$DEPLOYMENT_CONFIG_PATH"
 echo ""
 
-# 等待 L1 RPC 就绪
+# Wait for the L1 RPC to become ready
 wait_l1() {
   local max=30
   local n=0
@@ -77,8 +77,8 @@ ANVIL_PID=""
 if [ "$CHAIN_ENV" = "local" ]; then
   if ! cast block latest --rpc-url "$L1_RPC_URL" &>/dev/null; then
     echo "L1 not running. Starting anvil in background with block time ${L1_BLOCK_TIME}s..."
-    # --rm 容器的删除是异步的：chain-reset 的 docker stop 一返回就走到这里，旧容器可能还没消失，
-    # 直接 run 会因同名冲突失败。先强删并等它真正消失。
+    # Container removal with --rm is asynchronous: after chain-reset's docker stop returns, the old container
+    # may still exist, causing run to fail with a name conflict. Force-remove it first and wait until it is gone.
     docker rm -f anvil-chain >/dev/null 2>&1 || true
     for _ in $(seq 1 20); do
       [ -z "$(docker ps -aq -f name='^anvil-chain$')" ] && break
@@ -94,15 +94,15 @@ if [ "$CHAIN_ENV" = "local" ]; then
     echo "L1 already running at $L1_RPC_URL"
   fi
 else
-  # remote: 直接检查 L1 可用
+  # Remote: check L1 availability directly.
   echo "Checking L1 RPC..."
   wait_l1
 fi
 
-# local 模式：给部署/运行账户充值。
-# anvil 只给它自己派生的 20 个账户预置余额，而 .envrc 里的 DEPLOY/GS_* 是自定义账户，
-# 在全新 anvil 上余额为 0，会导致后续 CGT/合约部署因 gas 不足失败。
-# 本地 Anvil 直接改余额，不走交易确认，避免受 L1_BLOCK_TIME 影响变慢。
+# Local mode: fund deployment and operator accounts.
+# Anvil pre-funds only its 20 derived accounts, while DEPLOY/GS_* in .envrc are custom accounts whose balances
+# are zero on a fresh anvil instance. Without funding, subsequent CGT/contract deployment fails due to insufficient gas.
+# Change balances directly on local anvil without transaction confirmation to avoid delays from L1_BLOCK_TIME.
 if [ "$CHAIN_ENV" = "local" ]; then
   echo "Funding deploy/operator accounts..."
   for addr in "$DEPLOY_ADDRESS" "$GS_ADMIN_ADDRESS" "$GS_BATCHER_ADDRESS" "$GS_PROPOSER_ADDRESS" "$GS_SEQUENCER_ADDRESS"; do
@@ -111,9 +111,10 @@ if [ "$CHAIN_ENV" = "local" ]; then
       && echo "  funded $addr" || echo "  WARN: fund $addr failed"
   done
 
-  # 本地 anvil 默认不预置 Multicall3，而 op-challenger 依赖它做批量读，缺失会报
-  # "failed to fetch batch: Resource not found"。在部署合约前用官方 keyless 预签名交易
-  # 部署到 canonical 地址，使后续所有块都可用。（幂等）
+  # Local anvil does not include Multicall3 by default, but op-challenger depends on it for batch reads
+  # and reports "failed to fetch batch: Resource not found" when it is absent. Before deploying contracts,
+  # use the official keyless presigned transaction to deploy it at the canonical address, making it available
+  # to all subsequent blocks. This operation is idempotent.
   echo "Deploying Multicall3..."
   bash "$SCRIPT_DIR/deploy-multicall3.sh"
 fi
@@ -122,14 +123,14 @@ echo ""
 echo "Running contract deployment and generating genesis/rollup config..."
 bash "$SCRIPT_DIR/deploy-contracts.sh"
 
-# 把部署生成的 rollup.json 修正为运行时 op-node(cgt-jovian/v1.16.5) 可用的形态：
-# 删除 da_challenge_contract_address、补齐 chain_op_config；local 额外刷新 genesis.l1.hash。
-# 这样 setup 完可直接 chain-start，无需手动 patch。（幂等，可重复执行）
+# Patch the generated rollup.json for compatibility with the runtime op-node (cgt-jovian/v1.16.5):
+# remove da_challenge_contract_address, add chain_op_config, and refresh genesis.l1.hash in local mode.
+# This allows chain-start to run immediately after setup without manual patching. The operation is idempotent.
 echo ""
 echo "Patching rollup.json compatibility..."
 bash "$SCRIPT_DIR/patch-rollup-config.sh" "$CHAIN_ENV"
 
-# 若本次脚本启动了 anvil，可选保留或关闭（保留便于后续 chain-start 使用）
+# If this script started anvil, it can remain running for the subsequent chain-start or be stopped manually.
 if [ -n "$ANVIL_PID" ]; then
   echo ""
   echo "Anvil is still running in container 'anvil-chain'. Stop with: docker stop anvil-chain"

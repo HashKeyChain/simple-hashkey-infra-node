@@ -1,13 +1,17 @@
 #!/bin/bash
 #
-# 纯组件启动器：op-rbuilder 的 builder op-node —— 对齐主网拓扑
-# （rollup-boost 架构图里的 builder-op-node → builder）。不出块（非 sequencer），
-# 通过 Engine API 驱动 run-op-rbuilder.sh 的 op-rbuilder 同步 canonical 链：
-#   - 从 L1(anvil) 派生补历史（创世 → safe head），不依赖 op-geth 的 EL p2p；
-#   - 经 CL p2p 静态连主(sequencer) op-node，收 unsafe 块 gossip，跟到 unsafe head。
-# 由 chain-start.sh 编排调用（需 _CALLER_SEQ_P2P_MULTIADDR），也可单独调试。
+# Component-only launcher for op-rbuilder's builder op-node, matching the mainnet
+# topology (builder-op-node -> builder in the rollup-boost architecture diagram).
+# It is not a sequencer and does not produce blocks. Through the Engine API, it drives
+# the op-rbuilder instance from run-op-rbuilder.sh to sync the canonical chain:
+#   - derives history from L1 (anvil), from genesis through the safe head, without
+#     relying on op-geth EL P2P;
+#   - connects statically over CL P2P to the primary (sequencer) op-node and follows
+#     unsafe-block gossip to the unsafe head.
+# Orchestrated by chain-start.sh (requires _CALLER_SEQ_P2P_MULTIADDR); it can also run
+# independently for debugging.
 #
-# flag 名以本地 op-node（cgt-jovian/v1.16.5）`--help` 为准。
+# Confirm flags against the local op-node (cgt-jovian/v1.16.5) `--help`.
 #
 source .envrc
 
@@ -16,14 +20,17 @@ OP_GETH_DATA_PATH="${_CALLER_OP_GETH_DATA_PATH:-${OP_GETH_DATA_PATH:-$BASE_PATH/
 JWT_FILE="${_CALLER_JWT_FILE:-$OP_GETH_DATA_PATH/jwt.txt}"
 ROLLUP_FILE="${_CALLER_OP_NODE_ROLLUP_FILE:-${DEPLOYMENT_CONFIG_PATH:-$BASE_PATH/config/$DEPLOYMENT_CONTEXT}/rollup.json}"
 
-# builder op-node 自己的 p2p 身份与工作目录（与主 op-node 分开，避免默认相对路径文件冲突）。
+# The builder op-node has its own P2P identity and working directory, separate from the
+# primary op-node to avoid conflicts between files at default relative paths.
 OPNODE_DIR="$BASE_PATH/data/op-rbuilder-opnode"
 mkdir -p "$OPNODE_DIR"
 P2P_KEY="$OPNODE_DIR/p2p_priv.txt"
 [ -f "$P2P_KEY" ] || op-node p2p genkey | tail -1 > "$P2P_KEY"
 
-# 静态连主(sequencer) op-node：优先用 chain-start 下传的多址；单独运行（off 手动预热）时，
-# 从主 op-node 的固定 p2p key 现算 peerID 拼多址（key 由 run-op-node.sh 首启时生成）。
+# Connect statically to the primary (sequencer) op-node. Prefer the multiaddress supplied
+# by chain-start. When run independently for manual warm-up in off mode, derive the
+# multiaddress and peer ID from the primary op-node's fixed P2P key, which run-op-node.sh
+# generates on first startup.
 STATIC_PEER="${_CALLER_SEQ_P2P_MULTIADDR:-${SEQ_P2P_MULTIADDR:-}}"
 if [ -z "$STATIC_PEER" ]; then
   SEQ_KEY="${_CALLER_SEQ_P2P_KEY:-$BASE_PATH/data/op-node/p2p_priv.txt}"

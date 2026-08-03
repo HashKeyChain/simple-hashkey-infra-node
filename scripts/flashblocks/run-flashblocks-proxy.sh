@@ -1,10 +1,12 @@
 #!/bin/bash
 #
-# 纯组件启动器：flashblocks-websocket-proxy —— 订阅 rollup-boost 的 flashblocks 广播，
-# 对用户侧扇出（生产同构，本地不省略）。
-# 由 chain-start.sh 编排调用，也可单独运行用于调试。
+# Component-only launcher for flashblocks-websocket-proxy. It subscribes to the
+# rollup-boost Flashblocks broadcast and fans it out to user-facing consumers
+# (matching production topology; not omitted locally).
+# Orchestrated by chain-start.sh; it can also run independently for debugging.
 #
-# flag 名以 `bin/flashblocks-websocket-proxy --help`（rollup-boost v0.7.11 同 submodule）为准，落地时先校准。
+# Confirm flag names against `bin/flashblocks-websocket-proxy --help`
+# (the same rollup-boost v0.7.11 submodule) before deployment.
 #
 source .envrc
 

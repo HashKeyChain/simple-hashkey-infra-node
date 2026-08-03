@@ -1,9 +1,9 @@
 #!/bin/bash
 #
-# 停止由 chain-start.sh 启动的所有服务（op-challenger、op-proposer、op-batcher、op-node、op-geth）。
-# 若为本地环境且 anvil 由本仓库脚本启动，可手动停止: docker stop anvil-chain
+# Stop all services started by chain-start.sh (op-challenger, op-proposer, op-batcher, op-node, and op-geth).
+# In a local environment, if anvil was started by this repository's scripts, stop it manually with: docker stop anvil-chain
 #
-# 用法: bash scripts/chain-stop.sh
+# Usage: bash scripts/chain-stop.sh
 #
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
@@ -61,8 +61,8 @@ stop_matching_processes() {
   done < <(ps axww -o pid= -o command=)
 }
 
-# flashblocks 组件先停（与启动顺序相反）；编排见 scripts/flashblocks/stop-flashblocks.sh
-# （source 进来复用上面的 stop_pid / stop_matching_processes 及 PID_DIR / DATA_DIR）。
+# Stop Flashblocks components first, in reverse startup order. See scripts/flashblocks/stop-flashblocks.sh
+# for orchestration; source it to reuse stop_pid, stop_matching_processes, PID_DIR, and DATA_DIR above.
 source "$BASE_PATH/scripts/flashblocks/stop-flashblocks.sh"
 
 # First stop the processes recorded by the latest chain-start.sh run.

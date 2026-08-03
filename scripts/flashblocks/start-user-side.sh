@@ -1,15 +1,18 @@
 #!/bin/bash
 #
-# Flashblocks 用户面启动（由 chain-start.sh 在 FLASHBLOCKS_MODE = enabled 时 `source`）。
-# 以 source 方式运行：共享 chain-start.sh 的变量作用域（BASE_PATH/DATA_DIR/LOG_DIR/PID_DIR 及
-# start-sequencer-side.sh 已导出的 _CALLER_*）。
+# Start the user-facing side of Flashblocks (sourced by chain-start.sh when
+# FLASHBLOCKS_MODE is dry_run or enabled). It runs via source and shares chain-start.sh's variable
+# scope (BASE_PATH/DATA_DIR/LOG_DIR/PID_DIR and the _CALLER_* values exported by
+# start-sequencer-side.sh).
 #
-# 职责（仅 enabled；本地=生产同构，proxy 不省略）：
-#   - flashblocks-websocket-proxy：对外广播 flashblocks 流
-#   - op-reth（flashblocks-aware RPC 副本）：对外提供带 pending flashblocks 的 RPC
-#   - 该 op-reth 的校验 op-node：驱动 op-reth 同步
+# Responsibilities (dry_run and enabled; local topology matches production and includes
+# the proxy). In dry_run this is a shadow preview and must not receive production traffic:
+#   - flashblocks-websocket-proxy: broadcasts the Flashblocks stream externally;
+#   - op-reth (Flashblocks-aware RPC replica): serves RPC with pending Flashblocks;
+#   - the verifier op-node for this op-reth instance: drives op-reth synchronization.
 #
-# 注：本脚本不做 set -e / exit；沿用调用方（chain-start.sh set -e）的执行语义。
+# Note: this script does not run set -e or exit; it inherits the caller's execution
+# semantics (chain-start.sh uses set -e).
 
 FB_DIR="$BASE_PATH/scripts/flashblocks"
 

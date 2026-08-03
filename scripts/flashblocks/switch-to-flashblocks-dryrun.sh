@@ -1,28 +1,42 @@
 #!/bin/bash
 #
-# 一键：把正在跑的 node+geth(off) 链，外科式切换到 flashblocks dry_run。
-# 核心：op-rbuilder 只起一次、全程不杀；切换只做“引擎驱动权交接 + op-node 重路由”。
+# One-command surgical switch of a running node+geth chain in off mode to Flashblocks
+# dry_run. The key invariant is that op-rbuilder starts once and is never killed during
+# the process; switching only transfers Engine control and reroutes op-node.
 #
-# 相位与 op-rbuilder 引擎驱动权：
-#   OFF        : op-geth + op-node(直连 geth :8651)
-#   SYNC       : + op-rbuilder + builder op-node（builder op-node 驱动 op-rbuilder 追同步）
-#   FLASHBLOCKS: op-geth + op-rbuilder + rollup-boost + op-node(经 rollup-boost :8551)
-#                op-rbuilder 改由 rollup-boost 驱动；builder op-node 停（否则抢同一 auth RPC）
+# Phases and op-rbuilder Engine control:
+#   OFF        : op-geth + op-node (connected directly to geth :8651)
+#   SYNC       : + op-rbuilder + builder op-node (the builder op-node drives
+#                op-rbuilder synchronization)
+#   FLASHBLOCKS: op-geth + op-rbuilder + rollup-boost + op-node + user-facing shadow RPC
+#                (through rollup-boost :8551). rollup-boost takes control of op-rbuilder,
+#                and the builder op-node stops to avoid competing for the same auth RPC.
 #
-# 流程：
-#   [1] 预检（含 op-node 重启安全性：链需跑过 Holocene 边界 + 一个 channel_timeout）
-#   [2] 起同步节点(op-rbuilder+builder op-node)  [3] 粗追平
-#   [4] admin_stopSequencer 冻结高度H  [5] 精追平到H  [6] 停 builder op-node
-#   [7] 写 .envrc dry_run  [8] 起 rollup-boost  [9] 只重启 op-node(改路由)  [10] 验证
+# Flow:
+#   [1] Preflight, including op-node restart safety: the chain must pass the Holocene
+#       boundary plus one channel_timeout.
+#   [2] Start synchronization nodes (op-rbuilder + builder op-node).
+#   [3] Catch up approximately.
+#   [4] Freeze height H with admin_stopSequencer.
+#   [5] Catch up exactly to H.
+#   [6] Stop the builder op-node.
+#   [7] Write dry_run to .envrc.
+#   [8] Start rollup-boost.
+#   [9] Restart only op-node to reroute it.
+#   [10] Start the user-facing shadow topology.
+#   [11] Verify.
 #
-# 用法:
+# Usage:
 #   bash scripts/flashblocks/switch-to-flashblocks-dryrun.sh [local|remote] [--lag=N] [--timeout=SEC] [--no-wait]
-# 选项:
-#   --lag=N        追平判定阈值（默认 2）
-#   --timeout=SEC  等追平 / 等 op-node 重启安全窗口的最长秒数（默认 1800）
-#   --no-wait      重启安全窗口未到时直接失败退出，不等待（默认会轮询等待）
+# Options:
+#   --lag=N        Catch-up threshold (default: 2).
+#   --timeout=SEC  Maximum seconds to wait for catch-up or the safe op-node restart
+#                  window (default: 1800).
+#   --no-wait      Fail immediately if the restart-safety window is not ready instead
+#                  of polling (polling is the default).
 #
-# 前提：Rust 组件已编译到 bin/（bash scripts/flashblocks/build-flashblocks.sh），链当前 off 在跑。
+# Prerequisites: Rust components are built into bin/ using
+# bash scripts/flashblocks/build-flashblocks.sh, and the chain is running in off mode.
 #
 set -uo pipefail
 
@@ -38,7 +52,7 @@ LOG_DIR="$DATA_DIR/logs"
 PID_DIR="$DATA_DIR/pids"
 mkdir -p "$LOG_DIR" "$PID_DIR"
 
-# ---------- 参数 ----------
+# ---------- Arguments ----------
 CHAIN_ENV=""; LAG=2; TIMEOUT=1800; NO_WAIT=0
 for arg in "$@"; do
   case "$arg" in
@@ -51,8 +65,8 @@ for arg in "$@"; do
        exit 1 ;;
   esac
 done
-case "$LAG" in ''|*[!0-9]*) echo "Error: --lag 必须是非负整数" >&2; exit 1 ;; esac
-case "$TIMEOUT" in ''|*[!0-9]*) echo "Error: --timeout 必须是非负整数" >&2; exit 1 ;; esac
+case "$LAG" in ''|*[!0-9]*) echo "Error: --lag must be a non-negative integer" >&2; exit 1 ;; esac
+case "$TIMEOUT" in ''|*[!0-9]*) echo "Error: --timeout must be a non-negative integer" >&2; exit 1 ;; esac
 if [ -z "$CHAIN_ENV" ]; then
   if echo "${L1_RPC_URL:-}" | grep -qE 'localhost|127\.0\.0\.1'; then CHAIN_ENV=local; else CHAIN_ENV=remote; fi
   echo "Auto-detected CHAIN_ENV=$CHAIN_ENV"
@@ -66,7 +80,8 @@ SEQ_P2P_KEY="$DATA_DIR/op-node/p2p_priv.txt"
 
 get_bn() { local n; n=$(cast bn --rpc-url "$1" 2>/dev/null || echo ""); case "$n" in ''|*[!0-9]*) echo -1 ;; *) echo "$n" ;; esac; }
 
-# 二分查出第一个 timestamp >= $1 的 L1 块号（搜索区间 [$2, $3]）；区间内不存在则返回 1。
+# Find the first L1 block whose timestamp is >= $1 by binary search over [$2, $3].
+# Return 1 if no such block exists in the interval.
 l1_first_block_at_or_after() {
   local target="$1" lo="$2" hi="$3" mid ts ans=""
   ts=$(cast block "$hi" -f timestamp --rpc-url "$L1_RPC_URL" 2>/dev/null)
@@ -82,42 +97,46 @@ l1_first_block_at_or_after() {
   echo "$ans"
 }
 
-# 第 [9] 步要重启主 op-node。op-node 启动时派生流水线会把 L1 读取起点回退一个
-# channel_timeout（Granite 后 50 个 L1 块，之前 300），回退撞到 L1 创世就停在创世。
-# 若落点早于 Holocene 激活块，BatchMux 会装上 pre-Holocene 的 BatchQueue，而重放旧
-# batch 时校验函数按“batch 所在 L1 块已过 Holocene”返回 BatchPast——BatchQueue 不认识
-# 这个值，直接 crit 退出，且每次重启都会复现。链太年轻时必然踩中，这里提前拦下。
+# Step [9] restarts the primary op-node. On startup, its derivation pipeline moves the L1
+# read origin back by one channel_timeout (50 L1 blocks after Granite, 300 before it),
+# stopping at L1 genesis if necessary. If that origin precedes Holocene activation,
+# BatchMux installs the pre-Holocene BatchQueue. While replaying an old batch, validation
+# returns BatchPast because the batch's L1 block is already after Holocene. BatchQueue
+# does not recognize that value, exits critically, and repeats the failure on every
+# restart. This check blocks the switch in advance when the chain is too young.
 #
-# 探测一次，往 stdout 打一行结果，用返回码区分：
-#   0  ok    <safe_origin> <bound> <ct>          已满足，可以切换
-#   1  wait  <safe_origin> <bound> <ct> <need>   条件未到，safe head 再往前走就会满足
-#   1  retry <原因>                               这一轮读不到数据，重试即可
-#   2  skip  <原因>                               无需/无法判定，直接放行
+# Probe once and print one result line to stdout, distinguished by return code:
+#   0  ok    <safe_origin> <bound> <ct>          Ready to switch.
+#   1  wait  <safe_origin> <bound> <ct> <need>   Not ready; advancing safe head will satisfy it.
+#   1  retry <reason>                             Data unavailable this round; retry.
+#   2  skip  <reason>                             Not required or indeterminate; allow the switch.
 probe_opnode_restart_safe() {
   local rollup_json="$DEPLOYMENT_CONFIG_PATH/rollup.json"
-  [ -f "$rollup_json" ] || { echo "skip 找不到 $rollup_json"; return 2; }
+  [ -f "$rollup_json" ] || { echo "skip cannot find $rollup_json"; return 2; }
 
   local holocene_t granite_t
   holocene_t=$(jq -r '.holocene_time // empty' "$rollup_json" 2>/dev/null)
   granite_t=$(jq -r '.granite_time // empty' "$rollup_json" 2>/dev/null)
-  # 未激活 / 创世激活：L1 创世块本身就在 Holocene 之后，回退到底也安全
-  case "$holocene_t" in ''|null|0) echo "skip holocene 未激活或创世激活"; return 2 ;; esac
+  # If inactive or active at genesis, L1 genesis itself is after Holocene, so a full
+  # rollback is safe.
+  case "$holocene_t" in ''|null|0) echo "skip Holocene is inactive or active at genesis"; return 2 ;; esac
 
   local genesis_l1
   genesis_l1=$(jq -r '.genesis.l1.number' "$rollup_json" 2>/dev/null)
-  case "$genesis_l1" in ''|null|*[!0-9]*) echo "skip 读不到 genesis.l1.number"; return 2 ;; esac
+  case "$genesis_l1" in ''|null|*[!0-9]*) echo "skip cannot read genesis.l1.number"; return 2 ;; esac
 
   local safe_origin l1_head
   safe_origin=$(cast rpc optimism_syncStatus --rpc-url "$OPNODE_RPC" 2>/dev/null | jq -r '.safe_l2.l1origin.number // empty')
-  case "$safe_origin" in ''|null|*[!0-9]*) echo "retry 读不到 safe_l2 的 L1 origin"; return 1 ;; esac
+  case "$safe_origin" in ''|null|*[!0-9]*) echo "retry cannot read the L1 origin of safe_l2"; return 1 ;; esac
   l1_head=$(get_bn "$L1_RPC_URL")
-  [ "$l1_head" -ge 0 ] || { echo "retry 读不到 L1 高度"; return 1; }
+  [ "$l1_head" -ge 0 ] || { echo "retry cannot read L1 height"; return 1; }
 
-  # 回退落点必须晚于 Holocene 边界；Granite 也已激活时 channel_timeout 才是 50，
-  # 因此落点同时要晚于 Granite 边界，否则回退途中超时值会变回 300、退得更远。
+  # The rollback origin must be after the Holocene boundary. channel_timeout is 50 only
+  # when Granite is also active, so the origin must also be after Granite; otherwise,
+  # the timeout changes back to 300 during rollback and moves the origin farther back.
   local bound ct=300 hol_blk gra_blk
   hol_blk=$(l1_first_block_at_or_after "$holocene_t" "$genesis_l1" "$l1_head") \
-    || { echo "retry L1 上还没有时间戳 >= holocene_time($holocene_t) 的区块"; return 1; }
+    || { echo "retry L1 has no block with timestamp >= holocene_time($holocene_t)"; return 1; }
   bound="$hol_blk"
   if [ -n "$granite_t" ] && [ "$granite_t" != null ] && [ "$granite_t" != 0 ]; then
     if gra_blk=$(l1_first_block_at_or_after "$granite_t" "$genesis_l1" "$l1_head"); then
@@ -132,41 +151,42 @@ probe_opnode_restart_safe() {
   echo "ok $safe_origin $bound $ct"; return 0
 }
 
-# 默认轮询等到条件满足（上限 ${TIMEOUT}）；--no-wait 时只判定一次，不满足即退出。
-# 注意：本文件里凡是 $VAR 紧跟中文/全角字符的地方都必须写成 ${VAR} —— bash 3.2 在 UTF-8
-# locale 下会把全角字符的首字节吃进变量名，配合 set -u 就是一句 "unbound variable" 后直接退出。
+# Poll until the condition is met by default, up to ${TIMEOUT}; with --no-wait, check
+# once and exit if it is not met. Use ${VAR} when a variable is followed immediately by
+# non-ASCII punctuation: Bash 3.2 under a UTF-8 locale may absorb the punctuation's first
+# byte into the variable name and exit with "unbound variable" under set -u.
 check_opnode_restart_safe() {
   local deadline=$(( $(date +%s) + TIMEOUT )) announced=0 out st
   while :; do
     out=$(probe_opnode_restart_safe); st=$?
-    # 函数内的 set -- 只影响本函数的位置参数，不会污染脚本
+    # set -- changes positional parameters only within this function.
     set -- $out
     case "$st" in
-      2) echo "  op-node 重启安全性：跳过检查（${*:2}）"; return 0 ;;
-      0) echo "  op-node 重启安全性：safe_origin=$2  channel_timeout=$4  回退落点=$(( $2 - $4 ))  需 >= $3"; return 0 ;;
+      2) echo "  op-node restart safety: check skipped (${*:2})"; return 0 ;;
+      0) echo "  op-node restart safety: safe_origin=$2  channel_timeout=$4  rollback_origin=$(( $2 - $4 ))  required >= $3"; return 0 ;;
     esac
 
     local detail secs=""
     if [ "$1" = "wait" ]; then
       secs=$(( ($5 - $2) * ${L1_BLOCK_TIME:-12} ))
-      detail="safe_origin=$2 需追到 $5（回退落点 $(( $2 - $4 )) < 边界 $3），约还需 ${secs}s"
+      detail="safe_origin=$2 must reach $5 (rollback origin $(( $2 - $4 )) < boundary $3), approximately ${secs}s remaining"
     else
       detail="${*:2}"
     fi
 
     if [ "$NO_WAIT" = 1 ]; then
-      echo "Error: 现在切换会让第 [9] 步重启的 op-node 崩溃（derivation crit: unknown batch validity type: 4）。" >&2
+      echo "Error: switching now would crash op-node when it restarts in step [9] (derivation crit: unknown batch validity type: 4)." >&2
       echo "       $detail" >&2
-      echo "       去掉 --no-wait 可让脚本自动等到条件满足；若 safe head 长期不前进，先查 op-batcher 是否在提交。" >&2
+      echo "       Remove --no-wait to wait automatically; if safe head remains stalled, check whether op-batcher is submitting." >&2
       return 1
     fi
     if [ "$(date +%s)" -ge "$deadline" ]; then
-      echo "Error: 等待 op-node 重启安全窗口超过 ${TIMEOUT}s 仍未满足：$detail" >&2
-      echo "       safe head 可能没在前进，检查 op-batcher 是否在提交（data/logs/op-batcher.log）。" >&2
+      echo "Error: op-node restart-safety window was still unavailable after ${TIMEOUT}s: $detail" >&2
+      echo "       safe head may be stalled; check whether op-batcher is submitting (data/logs/op-batcher.log)." >&2
       return 1
     fi
     if [ "$announced" = 0 ]; then
-      echo "  op-node 重启安全性：条件未到，等待中（上限 ${TIMEOUT}s，--no-wait 可改为直接失败）"
+      echo "  op-node restart safety: condition not met; waiting up to ${TIMEOUT}s (--no-wait fails immediately)"
       announced=1
     fi
     echo "    $detail"
@@ -174,7 +194,7 @@ check_opnode_restart_safe() {
   done
 }
 
-# 按 pid 文件停单个组件（存在才停）
+# Stop one component by PID file if present.
 stop_pidfile() {
   local name="$1" f="$PID_DIR/$1.pid" pid
   [ -f "$f" ] || return 0
@@ -184,7 +204,7 @@ stop_pidfile() {
   kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
   rm -f "$f"
 }
-# 按命令行特征停残留（不误杀 Cursor 辅助进程）
+# Stop residual processes by command-line signature without killing Cursor helpers.
 stop_match() {
   local needle1="$1" needle2="$2" pid command
   while read -r pid command; do
@@ -197,18 +217,22 @@ stop_match() {
 stop_builder_opnode() { stop_pidfile op-rbuilder-opnode; stop_match "op-node " "--rpc.port=${RBUILDER_OPNODE_PORT:-9565}"; }
 stop_main_opnode()    { stop_pidfile op-node;            stop_match "op-node " "--safedb.path=$DATA_DIR/op-node/safedb"; }
 
-# 起同步进程失败时的清理（把本脚本起的 op-rbuilder + builder op-node 停掉，链退回 off）
+# Cleanup after synchronization startup failure: stop the op-rbuilder and builder op-node
+# started by this script and return the chain to off mode.
 cleanup_sync_nodes() {
   stop_builder_opnode
   stop_pidfile op-rbuilder; stop_match "op-rbuilder " "$DATA_DIR/op-rbuilder"
 }
 stop_rollup_boost() { stop_pidfile rollup-boost; stop_match "rollup-boost " "--rpc-port ${RB_ENGINE_PORT:-8551}"; }
 
-# ---------- 中断保护 ----------
-# 本脚本从 [2] 起就在动链上拓扑：起同步进程、冻结出块、改 .envrc。中途被打断（Ctrl-C、
-# 信号、意外退出）而不清理的话，会留下"同步进程还在跑 + sequencer 冻结 + rollup-boost 缺席"
-# 的半吊子状态，且外部看不出任何异常。用 EXIT trap 兜底：按已推进到的阶段逐层回滚。
-# PHASE: 0=尚未动任何东西 1=已起同步进程 2=已冻结出块 3=已交接引擎+起 rollup-boost
+# ---------- Interruption protection ----------
+# Beginning with step [2], this script changes the live topology by starting
+# synchronization processes, freezing block production, and modifying .envrc. If
+# interrupted without cleanup by Ctrl-C, a signal, or an unexpected exit, it can leave
+# synchronization processes running, the sequencer frozen, and rollup-boost absent,
+# with no obvious external symptom. An EXIT trap rolls back each completed phase.
+# PHASE: 0=nothing changed, 1=sync processes started, 2=block production frozen,
+#        3=Engine control transferred and rollup-boost started.
 PHASE=0
 STOP_HASH=""
 SWITCH_DONE=0
@@ -229,22 +253,22 @@ on_exit() {
   local rc=$?
   { [ "$SWITCH_DONE" = 1 ] || [ "$PHASE" = 0 ]; } && return 0
   echo "" >&2
-  echo "!! 切换未完成就退出（exit=${rc}，已推进到 PHASE=${PHASE}），开始回滚..." >&2
+  echo "!! Switch exited before completion (exit=${rc}, reached PHASE=${PHASE}); rolling back..." >&2
   if [ "$PHASE" -ge 3 ]; then
-    echo "   停 rollup-boost、把 .envrc 写回 FLASHBLOCKS_MODE=off" >&2
+    echo "   Stopping rollup-boost and restoring FLASHBLOCKS_MODE=off in .envrc" >&2
     stop_rollup_boost
     set_envrc_mode off
   fi
   if [ "$PHASE" -ge 2 ]; then
-    echo "   admin_startSequencer 恢复出块" >&2
+    echo "   Restoring block production with admin_startSequencer" >&2
     [ -n "$STOP_HASH" ] && cast rpc admin_startSequencer "$STOP_HASH" --rpc-url "$OPNODE_RPC" >/dev/null 2>&1
   fi
-  echo "   停同步进程（op-rbuilder + builder op-node）" >&2
+  echo "   Stopping synchronization processes (op-rbuilder + builder op-node)" >&2
   cleanup_sync_nodes
-  echo "!! 已回滚，链退回 off。确认出块恢复后可重跑本脚本。" >&2
+  echo "!! Rollback complete; the chain is back in off mode. Confirm block production has resumed before rerunning this script." >&2
 }
 trap on_exit EXIT
-trap 'echo "" >&2; echo "!! 收到中断信号（Ctrl-C / SIGTERM）" >&2; exit 130' INT TERM
+trap 'echo "" >&2; echo "!! Received interrupt signal (Ctrl-C / SIGTERM)" >&2; exit 130' INT TERM
 
 echo "============================================"
 echo "  Surgical switch off → flashblocks dry_run ($CHAIN_ENV)"
@@ -256,60 +280,63 @@ echo "  rollup-boost = :${RB_ENGINE_PORT:-8551}"
 echo "  lag/timeout  = ${LAG} / ${TIMEOUT}s"
 echo ""
 
-# ---------- [1] 预检 ----------
-echo "[1] 预检..."
+# ---------- [1] Preflight ----------
+echo "[1] Preflight..."
 
-# 幂等保护：链可能已经在 dry_run/enabled 拓扑下跑（上次切换成功，或 chain-start.sh 直接以
-# FLASHBLOCKS_MODE=dry_run 起的全套）。此时再切一次只会起重复的 op-rbuilder 并让 builder
-# op-node 与 rollup-boost 抢 Engine 控制权，必须提前挡住。
+# Idempotency guard: the chain may already be running in a dry_run/enabled topology,
+# either after a previous successful switch or because chain-start.sh started the full
+# stack with FLASHBLOCKS_MODE=dry_run. Switching again would only start a duplicate
+# op-rbuilder and make the builder op-node compete with rollup-boost for Engine control.
 if mode=$(curl -s --max-time 3 -X POST -H 'Content-Type: application/json' \
       --data '{"jsonrpc":"2.0","id":1,"method":"debug_getExecutionMode","params":[]}' \
       "http://localhost:${RB_DEBUG_PORT:-5555}" 2>/dev/null) && [ -n "$mode" ]; then
   cur=$(printf '%s' "$mode" | sed -n 's/.*"execution_mode":"\([a-z_]*\)".*/\1/p')
-  echo "  检测到 rollup-boost 已在运行，execution_mode=${cur:-未知}"
-  echo "  这条链已经处于 flashblocks 拓扑，无需再次切换。"
+  echo "  Detected a running rollup-boost, execution_mode=${cur:-unknown}"
+  echo "  This chain already uses the Flashblocks topology; no switch is needed."
   echo ""
-  echo "  确认出块：    cast bn --rpc-url $L2_RPC ; cast bn --rpc-url $RB_RPC"
-  echo "  回到 off：    bash $CHAIN_OPS_DIR/chain-stop.sh，把 .envrc 的 FLASHBLOCKS_MODE 改回 off，再 chain-start.sh"
+  echo "  Confirm blocks: cast bn --rpc-url $L2_RPC ; cast bn --rpc-url $RB_RPC"
+  echo "  Return to off: bash $CHAIN_OPS_DIR/chain-stop.sh, set FLASHBLOCKS_MODE=off in .envrc, then run chain-start.sh"
   if [ "${cur:-}" = "dry_run" ]; then
-    echo "  想升到 enabled：curl -s -X POST -H 'Content-Type: application/json' \\"
+    echo "  Switch to enabled: curl -s -X POST -H 'Content-Type: application/json' \\"
     echo "                   --data '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"debug_setExecutionMode\",\"params\":[{\"execution_mode\":\"enabled\"}]}' \\"
     echo "                   http://localhost:${RB_DEBUG_PORT:-5555}"
   fi
-  SWITCH_DONE=1   # 抑制 EXIT trap 的回滚逻辑：什么都没动，无需回滚
+  SWITCH_DONE=1   # Suppress EXIT rollback: nothing changed.
   exit 0
 fi
 
-[ "${FLASHBLOCKS_MODE:-off}" = "off" ] || echo "  WARN: 当前 .envrc FLASHBLOCKS_MODE=${FLASHBLOCKS_MODE}（预期 off）。"
-[ "$(get_bn "$L2_RPC")" -ge 0 ] || { echo "Error: op-geth 不可达（${L2_RPC}）。先确认 off 链在跑。" >&2; exit 1; }
+[ "${FLASHBLOCKS_MODE:-off}" = "off" ] || echo "  WARN: current .envrc FLASHBLOCKS_MODE=${FLASHBLOCKS_MODE} (expected off)."
+[ "$(get_bn "$L2_RPC")" -ge 0 ] || { echo "Error: op-geth is unreachable (${L2_RPC}). Confirm the off-mode chain is running." >&2; exit 1; }
 if ! cast rpc optimism_syncStatus --rpc-url "$OPNODE_RPC" >/dev/null 2>&1 && ! cast bn --rpc-url "$OPNODE_RPC" >/dev/null 2>&1; then
-  echo "Error: op-node 不可达（${OPNODE_RPC}）。" >&2; exit 1
+  echo "Error: op-node is unreachable (${OPNODE_RPC})." >&2; exit 1
 fi
-[ -x "$BASE_PATH/bin/op-rbuilder" ]  || { echo "Error: 缺 bin/op-rbuilder。先 bash scripts/flashblocks/build-flashblocks.sh" >&2; exit 1; }
-[ -x "$BASE_PATH/bin/rollup-boost" ] || { echo "Error: 缺 bin/rollup-boost。先 bash scripts/flashblocks/build-flashblocks.sh" >&2; exit 1; }
+[ -x "$BASE_PATH/bin/op-rbuilder" ]  || { echo "Error: bin/op-rbuilder is missing. First run bash scripts/flashblocks/build-flashblocks.sh" >&2; exit 1; }
+[ -x "$BASE_PATH/bin/rollup-boost" ] || { echo "Error: bin/rollup-boost is missing. First run bash scripts/flashblocks/build-flashblocks.sh" >&2; exit 1; }
+[ -x "$BASE_PATH/bin/flashblocks-websocket-proxy" ] || { echo "Error: bin/flashblocks-websocket-proxy is missing. First run bash scripts/flashblocks/build-flashblocks.sh" >&2; exit 1; }
+[ -x "$BASE_PATH/bin/op-reth" ] || { echo "Error: bin/op-reth is missing. First run bash scripts/flashblocks/build-flashblocks.sh" >&2; exit 1; }
 if ! (exec 3<>"/dev/tcp/127.0.0.1/${SEQ_P2P_TCP_PORT:-9222}") 2>/dev/null; then
-  echo "Error: 主 op-node CL p2p 端口 ${SEQ_P2P_TCP_PORT:-9222} 未监听；builder op-node 收不到 unsafe gossip。" >&2
-  echo "       先重启一次 off 链让 op-node 带上 p2p：bash $CHAIN_OPS_DIR/chain-stop.sh && bash $CHAIN_OPS_DIR/chain-start.sh $CHAIN_ENV" >&2
+  echo "Error: primary op-node CL P2P port ${SEQ_P2P_TCP_PORT:-9222} is not listening; the builder op-node cannot receive unsafe gossip." >&2
+  echo "       Restart the off-mode chain once to enable op-node P2P: bash $CHAIN_OPS_DIR/chain-stop.sh && bash $CHAIN_OPS_DIR/chain-start.sh $CHAIN_ENV" >&2
   exit 1
 fi
 exec 3>&- 2>/dev/null || true
 check_opnode_restart_safe || exit 1
-echo "  OK。"
+echo "  OK."
 echo ""
 
-# ---------- [2] 起同步节点 ----------
-echo "[2] 起同步节点：op-rbuilder + builder op-node..."
+# ---------- [2] Start synchronization nodes ----------
+echo "[2] Starting synchronization nodes: op-rbuilder + builder op-node..."
 export _CALLER_L1_RPC_URL="$L1_RPC_URL"
 export DEPLOYMENT_CONFIG_PATH="$BASE_PATH/config/$DEPLOYMENT_CONTEXT"
 export _CALLER_OP_GETH_GENESIS_FILE="$DEPLOYMENT_CONFIG_PATH/genesis.json"
 if [ -f "$SEQ_P2P_KEY" ]; then
   SEQ_PEER_ID=$(op-node p2p priv2id < "$SEQ_P2P_KEY" | tail -1)
   export _CALLER_SEQ_P2P_MULTIADDR="/ip4/127.0.0.1/tcp/${SEQ_P2P_TCP_PORT:-9222}/p2p/${SEQ_PEER_ID}"
-  echo "  sequencer 静态多址: $_CALLER_SEQ_P2P_MULTIADDR"
+  echo "  Sequencer static multiaddress: $_CALLER_SEQ_P2P_MULTIADDR"
 else
-  echo "  WARN: 未找到 ${SEQ_P2P_KEY}，builder op-node 退化为纯 L1 派生（只到 safe head）。"
+  echo "  WARN: ${SEQ_P2P_KEY} not found; builder op-node falls back to L1-only derivation (safe head only)."
 fi
-PHASE=1   # 从这里起，异常退出必须清理同步进程（见 on_exit）
+PHASE=1   # From here, unexpected exits must clean up synchronization processes (see on_exit).
 nohup bash "$FB_DIR/run-op-rbuilder.sh" >> "$LOG_DIR/op-rbuilder.log" 2>&1 &
 echo $! > "$PID_DIR/op-rbuilder.pid"
 echo "  op-rbuilder started (pid $(cat "$PID_DIR/op-rbuilder.pid"))"
@@ -319,8 +346,8 @@ echo $! > "$PID_DIR/op-rbuilder-opnode.pid"
 echo "  builder op-node started (pid $(cat "$PID_DIR/op-rbuilder-opnode.pid"))"
 echo ""
 
-# ---------- [3] 粗追平 ----------
-echo "[3] 等 op-rbuilder 粗追平 op-geth（|Δ| ≤ ${LAG}，≤ ${TIMEOUT}s）..."
+# ---------- [3] Approximate catch-up ----------
+echo "[3] Waiting for op-rbuilder to catch up approximately to op-geth (|Δ| <= ${LAG}, <= ${TIMEOUT}s)..."
 caught=0
 for i in $(seq 1 "$TIMEOUT"); do
   g=$(get_bn "$L2_RPC"); r=$(get_bn "$RB_RPC")
@@ -329,60 +356,60 @@ for i in $(seq 1 "$TIMEOUT"); do
     { [ $(( i % 5 )) -eq 0 ] || [ "$d" -le "$LAG" ]; } && echo "  op-geth=$g op-rbuilder=$r Δ=$d"
     [ "$d" -le "$LAG" ] && { caught=1; break; }
   else
-    [ $(( i % 5 )) -eq 0 ] && echo "  等 op-rbuilder RPC 就绪... (op-rbuilder=$r)"
+    [ $(( i % 5 )) -eq 0 ] && echo "  Waiting for op-rbuilder RPC... (op-rbuilder=$r)"
   fi
   sleep 1
 done
 if [ "$caught" != 1 ]; then
-  echo "Error: ${TIMEOUT}s 内未粗追平（op-rbuilder 起不来或同步卡住，查 $LOG_DIR/op-rbuilder.log）。" >&2
+  echo "Error: approximate catch-up failed within ${TIMEOUT}s (op-rbuilder failed to start or synchronization stalled; inspect $LOG_DIR/op-rbuilder.log)." >&2
   exit 1
 fi
-echo "  粗追平 OK。"
+echo "  Approximate catch-up OK."
 echo ""
 
-# ---------- [4] 冻结高度 ----------
-echo "[4] admin_stopSequencer 冻结主 op-node 出块..."
+# ---------- [4] Freeze height ----------
+echo "[4] Freezing primary op-node block production with admin_stopSequencer..."
 STOP_HASH=$(cast rpc admin_stopSequencer --rpc-url "$OPNODE_RPC" 2>/dev/null | tr -d '"')
 if [ -z "$STOP_HASH" ]; then
-  echo "Error: admin_stopSequencer 失败（op-node 未开 admin 或非 sequencer）。" >&2
+  echo "Error: admin_stopSequencer failed (op-node admin API is disabled or this is not a sequencer)." >&2
   exit 1
 fi
-PHASE=2   # 出块已冻结，异常退出必须 admin_startSequencer 恢复
-echo "  已暂停，冻结 head hash=$STOP_HASH"
+PHASE=2   # Block production is frozen; unexpected exits must restore it with admin_startSequencer.
+echo "  Paused at head hash=$STOP_HASH"
 echo ""
 
-# ---------- [5] 精追平到 H ----------
+# ---------- [5] Exact catch-up to H ----------
 H=$(get_bn "$L2_RPC")
-echo "[5] 等 op-rbuilder 精确追到冻结高度 H=${H}（≤ 120s）..."
+echo "[5] Waiting for op-rbuilder to reach frozen height H=${H} exactly (<= 120s)..."
 exact=0
 for i in $(seq 1 120); do
   r=$(get_bn "$RB_RPC")
-  [ "$r" -ge "$H" ] && { exact=1; echo "  op-rbuilder=$r ≥ H=${H}，已到位。"; break; }
+  [ "$r" -ge "$H" ] && { exact=1; echo "  op-rbuilder=$r >= H=${H}; ready."; break; }
   [ $(( i % 5 )) -eq 0 ] && echo "  op-rbuilder=$r / H=$H"
   sleep 1
 done
 if [ "$exact" != 1 ]; then
-  echo "Error: 120s 内 op-rbuilder 未追到冻结高度 H=${H}。" >&2
+  echo "Error: op-rbuilder did not reach frozen height H=${H} within 120s." >&2
   exit 1
 fi
 echo ""
 
-# ---------- [6] 停 builder op-node（放开 op-rbuilder 引擎）----------
-echo "[6] 停 builder op-node（交出 op-rbuilder 引擎驱动权）..."
+# ---------- [6] Stop builder op-node (release the op-rbuilder Engine) ----------
+echo "[6] Stopping builder op-node (releasing op-rbuilder Engine control)..."
 stop_builder_opnode
 sleep 2
 echo ""
 
-# ---------- [7] 写 .envrc dry_run ----------
-echo "[7] 写 .envrc：FLASHBLOCKS_MODE=dry_run"
-PHASE=3   # 从这里起，异常退出还要停 rollup-boost 并把 .envrc 写回 off
+# ---------- [7] Write dry_run to .envrc ----------
+echo "[7] Writing FLASHBLOCKS_MODE=dry_run to .envrc"
+PHASE=3   # From here, unexpected exits must also stop rollup-boost and restore off in .envrc.
 set_envrc_mode dry_run
 export FLASHBLOCKS_MODE=dry_run
 echo "  done"
 echo ""
 
-# ---------- [8] 起 rollup-boost（接管驱动 op-rbuilder）----------
-echo "[8] 起 rollup-boost（dry-run）..."
+# ---------- [8] Start rollup-boost (take control of op-rbuilder) ----------
+echo "[8] Starting rollup-boost (dry-run)..."
 export _CALLER_OP_GETH_DATA_PATH="$DATA_DIR/op-geth"
 export _CALLER_JWT_FILE="$DATA_DIR/op-geth/jwt.txt"
 nohup bash "$FB_DIR/run-rollup-boost.sh" >> "$LOG_DIR/rollup-boost.log" 2>&1 &
@@ -392,36 +419,41 @@ sleep 3
 if ! curl -s -m 3 -X POST -H 'Content-Type: application/json' \
      --data '{"jsonrpc":"2.0","id":1,"method":"debug_getExecutionMode","params":[]}' \
      "http://localhost:${RB_DEBUG_PORT:-5555}" >/dev/null 2>&1; then
-  echo "Error: rollup-boost 起来后 debug 端口 ${RB_DEBUG_PORT:-5555} 无响应，可能已崩溃。查 $LOG_DIR/rollup-boost.log" >&2
+  echo "Error: rollup-boost debug port ${RB_DEBUG_PORT:-5555} is unresponsive after startup and may have crashed. Inspect $LOG_DIR/rollup-boost.log" >&2
   exit 1
 fi
 echo ""
 
-# ---------- [9] 只重启 op-node（改路由到 rollup-boost）----------
-echo "[9] 重启主 op-node（--l2 → rollup-boost :${RB_ENGINE_PORT:-8551}）..."
+# ---------- [9] Restart only op-node (reroute to rollup-boost) ----------
+echo "[9] Restarting primary op-node (--l2 → rollup-boost :${RB_ENGINE_PORT:-8551})..."
 stop_main_opnode
 sleep 2
 export _CALLER_OP_NODE_ROLLUP_FILE="$DEPLOYMENT_CONFIG_PATH/rollup.json"
 nohup bash "$CHAIN_OPS_DIR/run-op-node.sh" >> "$LOG_DIR/op-node.log" 2>&1 &
 echo $! > "$PID_DIR/op-node.pid"
 echo "  op-node started (pid $(cat "$PID_DIR/op-node.pid"))"
-# 拓扑已完成切换，后续只剩验证；此时回滚反而会把好不容易切好的链推回去
+echo ""
+
+# ---------- [10] Start user-facing shadow topology ----------
+echo "[10] Starting ws-proxy, op-reth, and verifier op-node..."
+# dry_run exposes builder previews for testing only. Do not route production user traffic
+# to op-reth until rollup-boost has switched to enabled.
+source "$FB_DIR/start-user-side.sh"
+# The topology switch is complete and only verification remains. Rolling back now would
+# unnecessarily undo a successful switch.
 SWITCH_DONE=1
 echo ""
 
-# ---------- [10] 验证 ----------
-echo "[10] 验证出块推进..."
+# ---------- [11] Verify ----------
+echo "[11] Verifying block production progress..."
 b0=$(get_bn "$L2_RPC"); ok=0
 for i in $(seq 1 30); do
   sleep 2; b1=$(get_bn "$L2_RPC")
-  [ "$b1" -gt "$b0" ] && { ok=1; echo "  出块推进 $b0 → ${b1}，切换成功。"; break; }
+  [ "$b1" -gt "$b0" ] && { ok=1; echo "  Block production advanced $b0 → ${b1}; switch succeeded."; break; }
 done
-[ "$ok" = 1 ] || echo "  WARN: 30 轮未见出块推进；查 $LOG_DIR/op-node.log 与 rollup-boost.log。若 op-node 未自动恢复出块，可 cast rpc admin_startSequencer <hash> --rpc-url $OPNODE_RPC"
+[ "$ok" = 1 ] || echo "  WARN: no block progress after 30 attempts; inspect $LOG_DIR/op-node.log and rollup-boost.log. If op-node did not resume automatically, run cast rpc admin_startSequencer <hash> --rpc-url $OPNODE_RPC"
 echo ""
-echo "=== 完成：已切到 dry_run ==="
-echo "  builder payload 校验：tail -f $LOG_DIR/rollup-boost.log （应全 VALID）"
-echo "  切 enabled：改 .envrc FLASHBLOCKS_MODE=enabled 后 chain-stop && chain-start $CHAIN_ENV"
-echo "            （或热切，不断链、但不会拉起用户面组件："
-echo "             curl -s -X POST -H 'Content-Type: application/json' \\"
-echo "               --data '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"debug_setExecutionMode\",\"params\":[{\"execution_mode\":\"enabled\"}]}' \\"
-echo "               http://localhost:${RB_DEBUG_PORT:-5555} ）"
+echo "=== Complete: switched to dry_run ==="
+echo "  Verify builder payloads: tail -f $LOG_DIR/rollup-boost.log (all should be VALID)"
+echo "  User-facing shadow RPC: http://localhost:${FB_RPC_HTTP_PORT:-8745} (do not expose publicly in dry_run)"
+echo "  Switch live to enabled: bash $FB_DIR/switch-dryrun-to-flashblocks-enabled.sh"

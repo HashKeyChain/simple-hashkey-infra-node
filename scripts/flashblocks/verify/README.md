@@ -1,138 +1,304 @@
-# Flashblocks 验证脚本
+# Flashblocks Verification Scripts
 
-把 Flashblocks 的验收检查固化成可重复执行的脚本。每个脚本只做一类检查，输出
-`PASS / FAIL / WARN / SKIP` 四种结果，退出码 0 表示全部通过，便于串进 CI 或反复自查。
+These scripts make Flashblocks acceptance checks repeatable. Each script covers one
+category and reports `PASS / FAIL / WARN / SKIP`. Exit code 0 means every required check
+passed, making the scripts suitable for CI and repeated local verification.
 
-验证门的定义见 `doc/flashblocks_local_impl.md` §7，运维流程见 `doc/chain-lifecycle.md`。
+Gate definitions are in section 7 of `doc/flashblocks_local_impl.md`; operational
+procedures are in `doc/chain-lifecycle.md`.
 
-## 快速开始
+## Quick Start
 
 ```bash
-# 按当前链的实际状态自动挑选该跑的验证门
+# Select verification gates automatically from the chain's current state.
 bash scripts/flashblocks/verify/run-all.sh
 
-# 只想快速过一遍，不发交易
+# Run a quick pass without sending transactions.
 bash scripts/flashblocks/verify/run-all.sh --quick
 ```
 
-## 各脚本职责
+## Usage
 
-| 脚本 | 验证什么 | 前提 |
-|---|---|---|
-| `p0-genesis.sh` | 四个 Rust 二进制齐备、版本锁在 Jovian 世代、分叉时间已烘入 genesis、op-rbuilder 与 op-geth 创世 hash 一致、每块分片数配置正确、所有组件共用同一份 JWT | 无（创世对比需两侧在跑，否则自动 SKIP） |
-| `p1-shadow.sh` | op-rbuilder 追平链头、采样区块的 blockHash 与 op-geth 完全一致、无 invalid block、两侧同步推进 | op-geth + op-rbuilder 在跑 |
-| `p2-dryrun.sh` | 六件事：dry_run 模式 → op-node 走 rollup-boost → builder op-node 已停 → 出块未受影响 → **没有 builder 块被判 INVALID** → builder 确实在交付候选块 | `dry_run` 模式 |
-| `p2-txs.sh` | 五类交易（CGT 存款 / 转账 / 部署 / 调用 / revert）在两侧产出一致的区块与状态 | `dry_run`，账户需有 L2 余额 |
-| `p3-enabled.sh` | builder 块真正用于 canonical 链、flashblock 持续产出、对外广播流 (:1112) 握手成功且有数据、builder 失败时自动回退 op-geth | `enabled` 模式，或加 `--switch` 自动切换 |
-| `run-all.sh` | 按当前模式编排上述脚本并汇总 | 无 |
+Run commands from the repository root. The scripts load `.envrc` automatically and read
+the current chain using its ports and `DEPLOYMENT_CONTEXT`; manually running
+`source .envrc` first is unnecessary.
 
-## 常用参数
+### 1. off / Before Initial Integration
 
 ```bash
-# 放宽追平判定、多采样几个块
-bash scripts/flashblocks/verify/p1-shadow.sh --lag=3 --samples=20
+# Check binaries, versions, genesis, slicing parameters, and JWT.
+bash scripts/flashblocks/verify/p0-genesis.sh
 
-# 拉长观测窗口，让低频问题有机会暴露
-bash scripts/flashblocks/verify/p2-dryrun.sh --watch=120
-
-# 交易覆盖，但跳过较慢的 L1 存款
-bash scripts/flashblocks/verify/p2-txs.sh --skip-deposit
-
-# 从 dry_run 临时切到 enabled 验证，结束后自动切回
-bash scripts/flashblocks/verify/p3-enabled.sh --switch
+# After op-rbuilder shadow synchronization, check chain heads, sampled block hashes,
+# and continued synchronization.
+bash scripts/flashblocks/verify/p1-shadow.sh --lag=2 --samples=10 --watch=30
 ```
 
-## 怎么实现的
+When integrating Flashblocks from off mode for the first time, first run
+`scripts/flashblocks/switch-to-flashblocks-dryrun.sh` to catch up op-rbuilder and transfer
+Engine control. Do not start directly in enabled mode with an empty data directory.
 
-查链一律用 `cast`，数日志一律用 `rg`，`lib.sh` 里只有环境装载、输出与断言，没有别的机关。
-唯一的例外是 `wscheck/`（一个 Go 文件）：要判断 flashblocks 广播端口是不是真在推数据，
-得完成 WebSocket 的 HTTP Upgrade 握手、校验 `Sec-WebSocket-Accept`、再按 RFC 6455 解帧，
-shell 做不到。它零外部依赖，`lib.sh` 在源码比二进制新时会自动 `go build` 到 `bin/wscheck`；
-没有 Go 工具链时该项自动 SKIP，不影响其余检查。
+### 2. dry_run Verification
 
-## 判定方法上的两个约定
+```bash
+# Run P0 + P1 + P2 automatically.
+bash scripts/flashblocks/verify/run-all.sh --watch=300
 
-**日志看全量。** 这些脚本是给新起的链用的 —— 日志从创世开始，全量条数就是这条链的真实
-情况，「有没有出过一次 `InvalidPayload`」直接数总数即可。只有需要和窗口内出块数相比的项
-（builder 交付率、flashblock 片数、enabled 下的 builder 占比）才在观测前后各数一次相减，
-那几处在脚本里就是两行 `log_count` 加一个减法。
+# Run only the core dry_run gate.
+bash scripts/flashblocks/verify/p2-dryrun.sh --watch=300
+```
 
-反过来说，如果在跑了很久、反复切换过模式的链上复用这些脚本，历史记录会一起算进来：
-比如这条链曾切到 enabled 跑过，`p2` 的「没有 builder 块被采纳上链」就会数到那段历史而报
-FAIL。遇到这种情况清掉 `data/logs` 重新起链再验最省事，脚本也会在那一项下面提示。
+Before switching to enabled, confirm at least the following:
 
-**认 `context` 字段。** rollup-boost 每次 getPayload 都会打一行
-`returning block hash=… number=… context=<l2|builder>`，`context` 就是最终上链的 payload
-来源，上游集成测试也靠这行判定。dry_run 下它必须恒为 `l2`（builder 块只比对不上链），
-enabled 下应绝大多数为 `builder`。
+- `p2-dryrun.sh` reports no FAIL;
+- `InvalidPayload = 0` and no `Payload ID mismatch` exists;
+- the builder has enough candidate-block delivery samples, preferably at least a 95%
+  delivery rate;
+- the chain continues producing blocks at the expected rate;
+- `context=builder = 0` in dry_run, meaning no builder candidate was adopted on-chain.
 
-## P2 查哪六件事
+Additional mismatch check (normally produces no output):
 
-P2 刻意只留六项，每项都能独立抓到真问题，顺序即依赖顺序——前一项不成立，后一项的结论就没意义：
+```bash
+rg -ni 'InvalidPayload|Payload ID mismatch|payload.*mismatch' data/logs/rollup-boost.log
+```
 
-1. rollup-boost 处于 `dry_run`（前提）
-2. op-node 的 Engine 指向 rollup-boost，否则 builder 压根没参与出块
-3. builder op-node 已停，否则它会和 rollup-boost 抢 op-rbuilder 的 auth RPC
-4. 出块速度未受影响，且没有 builder 块被采纳上链（dry_run 语义）
-5. **没有 builder 块被判 INVALID** ← 硬门槛，P2 真正要证明的事
-6. builder 确实在交付候选块，否则第 5 项的 0 是「零样本」而非「零缺陷」
+Run dry_run before the initial launch on both testnet and mainnet.
 
-被挪走或删掉的检查项及理由：分片配置是一次性静态检查（→ `p0`）；flashblocks 片数、
-拼接错误只影响用户侧预确认流，而 dry_run 阶段这个流没有消费者（→ `p3`）；
-safe head / batcher / proposer 健康与 Flashblocks 无关，属基础链健康（→ `p1` 和日常监控）；
-端口监听、bad block 计数等则会被上面某项先捕获，自己抓不到新东西。
+### 3. enabled Verification
 
-手动只敲一条命令的话，等价于第 5、6 项加 dry_run 语义：
+```bash
+# Already enabled: check builder-block adoption, block production, Flashblock
+# production, and WebSocket broadcast.
+bash scripts/flashblocks/verify/p3-enabled.sh --watch=300
+
+# Switch live from dry_run to enabled. Remain enabled and update .envrc on success;
+# restore the original mode on failure.
+bash scripts/flashblocks/verify/p3-enabled.sh --switch --watch=300
+
+# Alternatively, run P0 + P1 + P3 + P4 automatically for the current mode.
+bash scripts/flashblocks/verify/run-all.sh --watch=300
+```
+
+`p3-enabled.sh` prints each WebSocket message's block number, `index`, and byte count,
+then summarizes the number of Flashblock slices received for each block in the
+observation window.
+
+Do not use `--fallback-drill` for routine acceptance testing. It switches rollup-boost
+to disabled and may disconnect op-rbuilder permanently from the chain. The default
+fallback check only reads existing logs and does not induce a failure.
+
+### 4. User-Facing Verification
+
+P3 verifies the builder and WebSocket stream. P4 performs only the basic user-facing check:
+submit transactions through op-reth, observe each one in its `pending` view before the
+canonical RPC (`L2_RPC`) sees the receipt, and require that observation to happen in under
+one second.
+
+```bash
+# Check the RPC and send three sample transactions.
+bash scripts/flashblocks/verify/p4-user-facing.sh
+
+# Check only whether the RPC is reachable.
+bash scripts/flashblocks/verify/p4-user-facing.sh --samples=0
+```
+
+Sampling uses `DEPLOY_PRIVATE_KEY`. Use only a disposable funded test key; `cast` passes it
+on the command line while signing.
+
+### 5. Local Acceptance
+
+```bash
+# Gates P0/P1/P3/P4, end-to-end scenarios, fault-proof non-regression, plus a report.
+bash scripts/flashblocks/verify/p5-acceptance.sh --watch=60
+
+# Rerun only the P5-specific scenarios after the gates already passed.
+bash scripts/flashblocks/verify/p5-acceptance.sh --skip-gates
+```
+
+The report lands in `data/verify-reports/p5-<timestamp>.md`; use `--report=PATH` to place it
+elsewhere. The scenarios are a plain transfer, a contract deployment plus call, and a
+reverting transaction, all submitted through op-reth, each cross-checked so op-reth and
+op-geth agree on the block it landed in.
+
+Both drills are destructive and off by default. `--fallback-drill` forwards to the p3
+drill. `--restart-off-drill` stops the chain, restarts it in off mode, verifies it, and then
+switches back to enabled; it takes at least ten minutes and is bounded by the
+`channel_timeout` restart window, so it asks for confirmation unless `--yes` is given.
+
+Out of scope for P5: deposits and withdrawals, CGT gas accounting (see
+`scripts/jovian/verify-jovian-fees.sh`), and L1 origin rotation.
+
+### 6. Results and Exit Codes
+
+- `PASS`: the check passed;
+- `FAIL`: a hard gate failed, and the script ultimately returns a nonzero exit code;
+- `WARN`: a risk or suboptimal metric exists but does not independently fail the run;
+- `SKIP`: prerequisites or samples are insufficient, so the item is not verified.
+
+CI and release scripts can rely directly on the exit code:
+
+```bash
+if bash scripts/flashblocks/verify/run-all.sh --watch=300; then
+  echo "Flashblocks verification passed"
+else
+  echo "Flashblocks verification failed"
+  exit 1
+fi
+```
+
+## Script Responsibilities
+
+| Script | Verification | Prerequisites |
+|---|---|---|
+| `p0-genesis.sh` | All four Rust binaries are available, versions are pinned to Jovian, fork times are embedded in genesis, op-rbuilder and op-geth genesis hashes match, per-block slice count is configured correctly, and all components share one JWT | None; genesis comparison requires both nodes to run, otherwise it is skipped |
+| `p1-shadow.sh` | op-rbuilder catches up to the chain head, sampled block hashes exactly match op-geth, no invalid blocks exist, and both sides advance together | op-geth + op-rbuilder running |
+| `p2-dryrun.sh` | Six checks: dry_run mode -> op-node uses rollup-boost -> builder op-node is stopped -> block production is unaffected -> **no builder block is marked INVALID** -> builder delivers candidate blocks | `dry_run` mode |
+| `p3-enabled.sh` | Builder blocks are used for the canonical chain, Flashblocks are produced continuously, the external broadcast (:1112) completes a handshake and carries data, and builder failures fall back automatically to op-geth | `enabled` mode, or add `--switch` |
+| `p4-user-facing.sh` | op-reth and canonical RPCs are reachable, and **transactions are visible in pending under a second, before the canonical RPC sees their receipts** | both RPCs running; sampling needs a funded test key |
+| `p5-acceptance.sh` | Runs P0/P1/P3/P4, then end-to-end scenarios (transfer, contract deployment and call, reverting transaction) and fault-proof non-regression, and writes a Markdown report | `enabled` mode; scenarios need a funded test key |
+| `run-all.sh` | Orchestrates and summarizes P0–P4 according to the current mode | None |
+
+## Common Options
+
+```bash
+# Allow more catch-up lag and sample more blocks.
+bash scripts/flashblocks/verify/p1-shadow.sh --lag=3 --samples=20
+
+# Extend the observation window to expose low-frequency problems.
+bash scripts/flashblocks/verify/p2-dryrun.sh --watch=120
+
+# Switch from dry_run to enabled; remain enabled on success and restore on failure.
+bash scripts/flashblocks/verify/p3-enabled.sh --switch
+
+# Measure preconfirmation latency with ten transactions.
+bash scripts/flashblocks/verify/p4-user-facing.sh --samples=10
+```
+
+## Implementation
+
+All chain queries use `cast`, and all log counts use `rg`. `lib.sh` contains only
+environment loading, output, and assertions. Exactly two things a shell cannot do live in
+Go, both printing `key=value` lines for the shell to `eval`:
+
+- `wscheck/` decides whether a Flashblocks broadcast port is actually sending data, which
+  requires a WebSocket HTTP Upgrade handshake and RFC 6455 frame decoding.
+  `gorilla/websocket` implements the protocol and is vendored.
+- `txprobe/` measures preconfirmation latency. BSD `date` has no millisecond resolution,
+  and a shell poll loop would fork `curl` and `jq` on every iteration, adding tens of
+  milliseconds of its own to a number compared against a 1000ms gate. `cast` still signs
+  the transaction; `txprobe` only submits the signed payload and polls. Standard library
+  only, no dependencies.
+
+`lib.sh` rebuilds either binary into `bin/` when its sources are newer, with `-mod=vendor`
+and `GOTOOLCHAIN=local` so the build never reaches the network. `.envrc` prepends a pinned
+Go toolchain to `PATH` for building the op-stack, and that binary is not always runnable
+(macOS Family Controls can deny execution with EPERM while the file still looks
+executable), so `lib.sh` asks each candidate for `go version` and uses the first that
+answers. With no usable toolchain, only the checks needing these two helpers are skipped.
+
+Both have unit tests: `cd scripts/flashblocks/verify/txprobe && go test ./...`, likewise
+under `wscheck/`.
+
+## Two Verification Conventions
+
+**Use complete logs.** These scripts target newly started chains whose logs begin at
+genesis, so total counts represent the chain's true history. Whether `InvalidPayload`
+ever occurred can be determined directly from the total. Only values compared with
+blocks produced during a window (builder delivery rate, Flashblock slice count, and
+builder share in enabled mode) use before/after counts and subtraction.
+
+When these scripts are reused on a long-running chain that switched modes repeatedly,
+historical records are included. For example, if the chain previously ran in enabled
+mode, P2's "no builder block was adopted on-chain" check counts that history and reports
+FAIL. In this case, clear `data/logs`, restart the chain, and verify again; the relevant
+check also displays this guidance.
+
+**Use the `context` field.** rollup-boost logs
+`returning block hash=… number=… context=<l2|builder>` for every getPayload. `context`
+identifies the payload source ultimately put on-chain, and upstream integration tests
+use the same field. It must always be `l2` in dry_run because builder blocks are compared
+but not adopted; in enabled mode, the vast majority should be `builder`.
+
+## The Six P2 Checks
+
+P2 intentionally retains only six checks. Each independently detects a real problem,
+and their order expresses their dependencies: a later conclusion is meaningless if an
+earlier prerequisite fails.
+
+1. rollup-boost is in `dry_run` (prerequisite)
+2. op-node's Engine points to rollup-boost; otherwise the builder does not participate
+3. the builder op-node is stopped; otherwise it competes with rollup-boost for
+   op-rbuilder's auth RPC
+4. block production speed is unaffected and no builder block is adopted on-chain
+   (dry_run semantics)
+5. **No builder block is marked INVALID** (the hard gate and core P2 claim)
+6. the builder actually delivers candidate blocks; otherwise item 5's zero means
+   "zero samples," not "zero defects"
+
+Other checks were moved or removed deliberately. Slice configuration is a one-time
+static check in P0. Flashblock slice counts and assembly errors affect only the
+user-facing preconfirmation stream, which is only a shadow preview during dry_run, so P3
+checks them after enabled activation. safe head / batcher / proposer health concerns the base chain rather than
+Flashblocks, so P1 and routine monitoring cover it. Port listeners, bad-block counts,
+and similar signals are detected first by one of the checks above and add no independent
+coverage.
+
+For a single manual command, the following approximates items 5 and 6 plus dry_run
+semantics:
 
 ```bash
 sed 's/\x1b\[[0-9;]*m//g' data/logs/rollup-boost.log | tail -3000 | rg -c \
   -e 'InvalidPayload' -e 'returning block.*context=builder' -e 'error getting payload from builder'
 ```
 
-但 builder 脱链在 rollup-boost 日志里看不出来（只会写「没交货」，不说为什么），
-要定位得比块高：`cast bn --rpc-url $L2_RPC` 对 `cast bn --rpc-url $RB_RPC`。
+rollup-boost logs cannot show that the builder fell behind; they report only a missed
+delivery, not its cause. Compare heights to diagnose it:
+`cast bn --rpc-url $L2_RPC` versus `cast bn --rpc-url $RB_RPC`.
 
-**硬门槛是「有效」，不是「相同」。** op-geth 收到 builder 候选块后会独立重放其中全部交易、
-自己复算 stateRoot / receiptsRoot / gasUsed，再与块头声称的值比对，对不上就返回 INVALID。
-所以「VALID」一条结论即等价于「builder 的执行语义与 op-geth 一致」，而且是在 builder
-自选的任意交易集上成立，比「两个块相同」更强的保证。计划文档 §六「交叉校验的本质」讲的就是这件事。
-INVALID 会经 `rpc.rs` 转成 Err、冒到 `error getting payload from builder error=InvalidPayload(...)`
-那行日志，所以有痕可查——脚本里这一项就是数 `InvalidPayload` 出现了几次。
+**The hard gate is validity, not equality.** After receiving a builder candidate,
+op-geth independently replays every transaction and recomputes stateRoot, receiptsRoot,
+and gasUsed, then compares them with the header. A mismatch returns INVALID. A VALID
+result therefore means that the builder's execution semantics agree with op-geth for an
+arbitrary builder-selected transaction set, which is stronger than requiring two blocks
+to be identical. This is the cross-validation principle described in section 6 of the
+planning document. `rpc.rs` converts INVALID into an error that reaches the
+`error getting payload from builder error=InvalidPayload(...)` log line, so the script
+counts `InvalidPayload` occurrences.
 
-**但这个 0 有边界。** Engine API 的状态有 `VALID` / `INVALID` / `SYNCING` / `ACCEPTED` 四种，
-rollup-boost 只在 `INVALID` 时留痕（`is_invalid()` 在 alloy 里就是 `matches!(self, Invalid{..})`），
-`SYNCING` 和 `ACCEPTED` 都当成功放过。所以「没有 `InvalidPayload`」的准确含义是
-**「没有被判定为无效」**，不等于「已被验证通过」——还有一种可能是 op-geth 压根没验成
-（候选块父块未知时返回 `SYNCING`）。这种情况几乎都源于 builder 脱链，
-会先被第 6 项的交付率和块高差抓到，属间接覆盖而非严格等价。
+**This zero has limits.** Engine API statuses are `VALID`, `INVALID`, `SYNCING`, and
+`ACCEPTED`. rollup-boost records evidence only for `INVALID` (`is_invalid()` in alloy is
+`matches!(self, Invalid{..})`); it treats `SYNCING` and `ACCEPTED` as success. Therefore,
+"no `InvalidPayload`" means **"none were classified as invalid,"** not "all were
+verified." op-geth may not complete validation and may return `SYNCING` when a candidate
+block's parent is unknown. This almost always results from the builder falling behind
+and is detected indirectly, rather than equivalently, by item 6's delivery rate and
+height difference.
 
-**次级是交付率。** INVALID=0 也可能因为 builder 压根没交付过块——那是零样本，不是零缺陷。
-所以必须同时看有多少块真的拿到了候选块。dry_run 下缺失无害（反正用 op-geth 的块），
-enabled 后每次缺失都是一次降级回退：链是安全的，只是那个块没有 flashblocks。
+**Delivery rate is secondary.** INVALID=0 may also mean that the builder delivered no
+blocks: zero samples, not zero defects. The check must also confirm how many blocks
+received candidates. Missing candidates are harmless in dry_run because op-geth blocks
+are used anyway. In enabled mode, each miss triggers fallback: the chain remains safe,
+but that block has no Flashblocks.
 
-**相同性脚本不查。** builder 有自己的排序和 flashblocks 分片策略，enabled 后它造的块
-本就该和 op-geth 不同，否则接它没有意义。所以「两个块不一样」不是缺陷，不值得为它
-写对账逻辑。要看差异分布就读下面提到的 Prometheus 指标——那是完整直方图，
-比在日志里抽几个样本对账准得多。
+**The scripts do not check equality.** The builder has independent ordering and
+Flashblock slicing strategies, so its blocks should differ from op-geth in enabled mode;
+otherwise, integrating it provides no value. Different blocks are not a defect and do
+not justify reconciliation logic. Use the Prometheus metrics described below to inspect
+the full difference distribution; they are more accurate than a few log samples.
 
-顺带一提，rollup-boost 的 Prometheus 指标（`--metrics`，端口见 `RB_METRICS_PORT`）
-只有 `block_building_gas_delta` / `block_building_tx_count_delta` 这类 delta 分布，
-**没有块无效计数**——第 5 项只能从日志数 `InvalidPayload`。
+rollup-boost Prometheus metrics (`--metrics`; see `RB_METRICS_PORT`) provide delta
+distributions such as `block_building_gas_delta` and `block_building_tx_count_delta`.
+They do **not count invalid blocks**, so item 5 must count `InvalidPayload` in logs.
 
-## 需要留意的地方
+## Important Caveat
 
-**p2-txs.sh 会把同一笔交易投给两个节点。** dry_run 下用户交易走 op-geth 的 HTTP RPC，
-不经过 rollup-boost，op-rbuilder 的交易池收不到，它造出来的会是空块，对账就假失败了。
-真实 enabled 拓扑里这一步由 op-reth → rollup-boost 的 fan-out 完成；dry_run 下没起 op-reth，
-所以脚本手动复现 fan-out。副作用是两侧打包时机可能差一个块，那一个块会出现
-`tx_count_delta=±1`，属正常；空载时应恒为 0。
-
-**p3 的 `--fallback-drill` 是破坏性的，默认关闭。** disabled 模式下 rollup-boost 停止向
-builder 发送所有请求（含 FCU 和 newPayload），op-rbuilder 会彻底脱离链；而它在本拓扑里
-没有 P2P 回填，恢复后拿不到缺失区块，链头会永久卡住。实测 12 秒演练就让它落后 30+ 块且
-无法自愈，只能走一遍完整的 `off → switch-to-flashblocks-dryrun.sh` 重建。
-默认的降级验证改为翻既有日志，核对每次 builder 失败是否都对应一个 `context=l2` 的出块，
-不需要人为制造故障。
-
-**fixtures/ 下是 p2-txs.sh 用的测试合约**，一个独立的最小 foundry 工程，
-首次运行会由 `forge build` 生成 `out/`（已 gitignore）。
+**P3's `--fallback-drill` is destructive and disabled by default.** In disabled mode,
+rollup-boost stops sending every request to the builder, including FCU and newPayload,
+so op-rbuilder disconnects completely from the chain. This topology has no P2P backfill,
+so after restoration op-rbuilder cannot obtain missing blocks and its head remains
+permanently stuck. A 12-second drill has been observed to leave it 30+ blocks behind
+without automatic recovery. Recovery requires a full
+`off → switch-to-flashblocks-dryrun.sh` rebuild. The default fallback verification reads
+existing logs and checks that every builder failure corresponds to a `context=l2` block,
+without inducing a failure.

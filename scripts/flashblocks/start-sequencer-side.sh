@@ -1,27 +1,35 @@
 #!/bin/bash
 #
-# Flashblocks 序列器侧启动（由 chain-start.sh 在 FLASHBLOCKS_MODE != off 时 `source`）。
-# 以 source 方式运行：共享 chain-start.sh 的变量作用域（BASE_PATH/DATA_DIR/LOG_DIR/PID_DIR/
-# FLASHBLOCKS_MODE 等）。
+# Start the sequencer side of Flashblocks (sourced by chain-start.sh when
+# FLASHBLOCKS_MODE != off). It runs via source and shares chain-start.sh's variable
+# scope (BASE_PATH/DATA_DIR/LOG_DIR/PID_DIR/FLASHBLOCKS_MODE, and others).
 #
-# 职责（必须在主 op-node 之前起）：
-#   - 起 op-rbuilder（reth 系 flashblocks builder，EL）
-#   - 起 rollup-boost（Engine API 代理，mode=$FLASHBLOCKS_MODE 为初值，可经 debug API 热切）
+# Responsibilities (must start before the primary op-node):
+#   - start op-rbuilder (reth-based Flashblocks builder, EL);
+#   - start rollup-boost (Engine API proxy, initially mode=$FLASHBLOCKS_MODE, with
+#     live switching available through the debug API).
 #
-# 拓扑约束：dry_run/enabled 态下 op-rbuilder 的 Engine（auth RPC=RBUILDER_AUTHRPC_PORT）由
-# rollup-boost 驱动（rollup-boost --builder-url 指向它，转发主 op-node 的 Engine 调用）。因此
-# 这里【不起 builder op-node】——builder op-node 也连同一个 auth RPC，二者并存会抢驱动 op-rbuilder。
-# builder op-node 只用于 off 阶段的“专门同步”：给冷启的 op-rbuilder 从 L1 派生 + gossip 追同步，
-# 见 switch-to-flashblocks-dryrun.sh [2]/[3]。追平后 fullrestart 到这里，改由 rollup-boost 驱动。
+# Topology constraint: in dry_run/enabled mode, op-rbuilder's Engine
+# (auth RPC=RBUILDER_AUTHRPC_PORT) is driven by rollup-boost. Its --builder-url points
+# to op-rbuilder and forwards Engine calls from the primary op-node. Therefore, this
+# script does not start the builder op-node: it connects to the same auth RPC and would
+# compete with rollup-boost for control of op-rbuilder. The builder op-node is used only
+# for dedicated synchronization in off mode, deriving from L1 and following gossip to
+# warm a cold op-rbuilder; see steps [2]/[3] in switch-to-flashblocks-dryrun.sh. After
+# catching up and fully restarting into this topology, rollup-boost takes over.
 #
-# 相位职责：本脚本只“拉起 flashblocks 拓扑”。op-rbuilder 追平由 off 阶段的专门同步步骤保证，
-# 这里不重复做同步等待。主 op-node 的 CL p2p 身份由 run-op-node.sh 自行生成/维护，无需在此处理。
+# Phase responsibility: this script only starts the Flashblocks topology. Dedicated
+# synchronization in the off phase ensures op-rbuilder is caught up, so this script does
+# not wait for synchronization again. run-op-node.sh generates and maintains the primary
+# op-node's CL P2P identity.
 #
-# 注：本脚本不做 set -e / exit；沿用调用方（chain-start.sh set -e）的执行语义。
+# Note: this script does not run set -e or exit; it inherits the caller's execution
+# semantics (chain-start.sh uses set -e).
 
 FB_DIR="$BASE_PATH/scripts/flashblocks"
 
-# reth 系与 geth 共用同一份 genesis.json（分叉已由 activate-fork.sh 烘入），无需单独 chainspec。
+# The reth-based components share genesis.json with geth (forks are embedded by
+# activate-fork.sh), so no separate chain specification is needed.
 export _CALLER_OP_GETH_GENESIS_FILE="$OP_GETH_GENESIS_FILE"
 
 echo "Starting op-rbuilder..."
