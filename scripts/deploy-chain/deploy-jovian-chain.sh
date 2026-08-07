@@ -24,6 +24,11 @@
 #   --lead=SEC       Lead time from the current L2 time to the first pending fork (default: 30; must exceed restart time).
 #   --target=FORK    Final fork to activate: granite | holocene | isthmus | jovian (default: jovian).
 #   -y, --yes        Pass to chain-reset to skip its irreversible-action confirmation.
+#   --rebuild-contracts
+#                    Force `forge clean` + `forge install` + a full rebuild. By default the contracts
+#                    are only rebuilt when the submodule is not already checked out at $OP_CONTRACTS_REF
+#                    or forge-artifacts/ is empty, which saves several minutes on a redeploy.
+#                    Use this when lib/ or the artifacts are suspected to be inconsistent.
 #
 # If env is omitted, detect it from L1_RPC_URL (localhost/127.0.0.1 is treated as local).
 #
@@ -43,7 +48,7 @@ GAS_PRICE_ORACLE="0x420000000000000000000000000000000000000F"
 ALL_FORKS=(granite holocene isthmus jovian)
 
 usage() {
-  echo "Usage: bash scripts/deploy-chain/deploy-jovian-chain.sh [local|remote] [--reset] [--pace=SEC] [--lead=SEC] [--target=granite|holocene|isthmus|jovian] [-y|--yes]" >&2
+  echo "Usage: bash scripts/deploy-chain/deploy-jovian-chain.sh [local|remote] [--reset] [--pace=SEC] [--lead=SEC] [--target=granite|holocene|isthmus|jovian] [-y|--yes] [--rebuild-contracts]" >&2
 }
 
 # ---------- Parse arguments ----------
@@ -61,6 +66,7 @@ for arg in "$@"; do
     --pace=*)     PACE="${arg#*=}" ;;
     --lead=*)     LEAD="${arg#*=}" ;;
     --target=*)   TARGET="${arg#*=}" ;;
+    --rebuild-contracts) export REBUILD_CONTRACTS=1 ;;
     *) echo "Unknown arg: $arg" >&2; usage; exit 1 ;;
   esac
 done
@@ -104,6 +110,7 @@ echo "  reset     = $([ "$DO_RESET" = 1 ] && echo yes || echo no)"
 echo "  pace      = ${PACE}s (interval between adjacent forks)"
 echo "  lead      = ${LEAD}s (lead time for the first fork)"
 echo "  target    = $TARGET"
+echo "  contracts = $([ "${REBUILD_CONTRACTS:-0}" = 1 ] && echo "forced rebuild" || echo "reuse artifacts when already at \$OP_CONTRACTS_REF")"
 echo "  L2 RPC    = $L2_RPC"
 echo ""
 

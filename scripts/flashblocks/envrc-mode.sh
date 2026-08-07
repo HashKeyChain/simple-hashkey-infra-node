@@ -11,10 +11,15 @@
 # .envrc uses off/dry_run/enabled, while rollup-boost's runtime ExecutionMode is
 # enabled/dry_run/disabled and has no "off".
 
+# Resolved from this file's location rather than the working directory: callers source it
+# from several depths, and a relative default would write to whichever .envrc happened to
+# be under $PWD.
+FB_ENVRC_PATH=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)/.envrc
+
 # set_envrc_mode <off|dry_run|enabled> [envrc-path]
 set_envrc_mode() {
   local mode="$1"
-  local file="${2:-.envrc}"
+  local file="${2:-$FB_ENVRC_PATH}"
 
   case "$mode" in
     off|dry_run|enabled) ;;

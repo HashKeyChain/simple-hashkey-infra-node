@@ -48,11 +48,33 @@ mkdir -p $DEPLOYMENT_CONFIG_PATH
 
 # Build and deploy contracts.
 cd $CONTRACTS_BEDROCK_PATH
-# Remove lib dirs that often cause "unable to rmdir ... Directory not empty" on checkout;
-# forge install below will reinstall the correct versions for this ref.
-git checkout $OP_CONTRACTS_REF
-echo "Cleaning Forge cache/artifacts for $OP_CONTRACTS_REF..."
-forge clean
+
+# checkout + forge clean + forge install cost several minutes and dominate a redeploy, yet
+# they are only needed when the submodule moves to a different ref: forge-artifacts/ and
+# lib/ are both keyed to the checked-out sources. When the tree already sits on
+# $OP_CONTRACTS_REF with artifacts present, reuse them; the unconditional forge build below
+# is incremental and still catches any edited source. REBUILD_CONTRACTS=1 forces the full
+# path — use it if lib/ or the artifacts are suspected to be inconsistent.
+REBUILD_CONTRACTS="${REBUILD_CONTRACTS:-0}"
+WANTED_SHA=$(git rev-parse --verify --quiet "${OP_CONTRACTS_REF}^{commit}" 2>/dev/null || true)
+CURRENT_SHA=$(git rev-parse --verify --quiet HEAD 2>/dev/null || true)
+REUSE_ARTIFACTS=0
+if [ "$REBUILD_CONTRACTS" != "1" ] \
+  && [ -n "$WANTED_SHA" ] && [ "$CURRENT_SHA" = "$WANTED_SHA" ] \
+  && [ -d forge-artifacts ] && [ -n "$(ls -A forge-artifacts 2>/dev/null)" ]; then
+  REUSE_ARTIFACTS=1
+fi
+
+if [ "$REUSE_ARTIFACTS" = "1" ]; then
+  echo "Contracts already at $OP_CONTRACTS_REF with artifacts present; reusing them."
+  echo "  (set REBUILD_CONTRACTS=1, or pass --rebuild-contracts to deploy-jovian-chain.sh, to force a clean rebuild)"
+else
+  # Remove lib dirs that often cause "unable to rmdir ... Directory not empty" on checkout;
+  # forge install below will reinstall the correct versions for this ref.
+  git checkout $OP_CONTRACTS_REF
+  echo "Cleaning Forge cache/artifacts for $OP_CONTRACTS_REF..."
+  forge clean
+fi
 
 if [ "$OP_CONTRACTS_REF" = "op-contracts/v2.0.0-beta.3" ]; then
   DEPLOY_SCRIPT="scripts/deploy/Deploy.s.sol:Deploy"
@@ -136,9 +158,15 @@ echo "  - Fault game genesis output root: $FAULT_GAME_GENESIS_OUTPUT_ROOT"
 
 # Build and deploy contracts.
 # forge install uses git clone/submodule internally, and long periods without Git output are normal.
-echo "Installing Forge dependencies (may take 2-5 min, git may have little output)..."
-forge install
-echo "Dependencies OK. Building..."
+if [ "$REUSE_ARTIFACTS" = "1" ]; then
+  echo "Skipping forge install (lib/ already matches $OP_CONTRACTS_REF)."
+else
+  echo "Installing Forge dependencies (may take 2-5 min, git may have little output)..."
+  forge install
+fi
+# Always build: it is incremental, so it is a no-op on reuse and the guard against a source
+# edit that the ref check cannot see.
+echo "Building contracts..."
 forge build --silent
 CURRENT_MAX_FEE_PER_GAS=$(cast to-dec "$(cast rpc eth_gasPrice --rpc-url "$L1_RPC_URL" | tr -d '"')")
 CURRENT_PRIORITY_GAS_PRICE=$(cast to-dec "$(cast rpc eth_maxPriorityFeePerGas --rpc-url "$L1_RPC_URL" | tr -d '"')")

@@ -27,7 +27,7 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/repo/scripts/flashblocks" "$TMP/bin"
 
-cp "$DRYRUN_SWITCH" "$TMP/repo/scripts/flashblocks/"
+cp "$DRYRUN_SWITCH" "$ROOT/scripts/flashblocks/envrc-mode.sh" "$TMP/repo/scripts/flashblocks/"
 cat > "$TMP/repo/.envrc" <<EOF
 export BASE_PATH="$TMP/repo"
 export FLASHBLOCKS_MODE=dry_run
@@ -80,5 +80,22 @@ rm -f "$TMP/repo/.envrc.bak"
   || fail "off switch did not forward arguments to the dry_run switch"
 grep -Fqx 'export FLASHBLOCKS_MODE=enabled' "$TMP/repo/.envrc" \
   || fail "off switch did not finish in enabled mode"
+
+# An .envrc that never declared the mode must gain the line rather than be left untouched:
+# a bare substitution reports success while writing nothing, so the caller would go on to
+# start the wrong topology.
+printf '%s\n' 'export BASE_PATH=/tmp/nowhere' > "$TMP/bare-envrc"
+bash "$ROOT/scripts/flashblocks/envrc-mode.sh" dry_run "$TMP/bare-envrc"
+grep -Fqx 'export FLASHBLOCKS_MODE=dry_run' "$TMP/bare-envrc" \
+  || fail "envrc-mode did not append the mode to an .envrc that lacked it"
+
+bash "$ROOT/scripts/flashblocks/envrc-mode.sh" enabled "$TMP/bare-envrc"
+[ "$(grep -c '^export FLASHBLOCKS_MODE=' "$TMP/bare-envrc")" = "1" ] \
+  || fail "envrc-mode appended a duplicate instead of replacing"
+grep -Fqx 'export FLASHBLOCKS_MODE=enabled' "$TMP/bare-envrc" \
+  || fail "envrc-mode did not replace an existing mode line"
+
+bash "$ROOT/scripts/flashblocks/envrc-mode.sh" bogus "$TMP/bare-envrc" 2>/dev/null \
+  && fail "envrc-mode accepted an invalid mode"
 
 echo "PASS: Flashblocks enabled switch scripts"

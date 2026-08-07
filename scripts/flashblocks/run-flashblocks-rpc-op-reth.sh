@@ -13,6 +13,12 @@
 # Confirm flag names against `bin/op-reth node --help` (reth v1.9.3) before deployment,
 # especially --flashblocks-url.
 #
+# --flashblocks-url must carry the /ws path. ws-proxy serves the stream only at /ws and has
+# no route at /, so omitting it yields 404 on every connect. reth's Flashblocks client
+# retries without backoff, which turns that 404 into a hot loop (~1600 attempts/sec, one
+# ERROR line each) that saturates CPU and disk. That starvation is enough to stall the
+# builder past its Engine API timeout and punch an unrecoverable hole in its chain.
+#
 source .envrc
 
 OP_GETH_DATA_PATH="${_CALLER_OP_GETH_DATA_PATH:-${OP_GETH_DATA_PATH:-$BASE_PATH/data/op-geth}}"
@@ -50,4 +56,4 @@ exec op-reth node \
   --discovery.port "${FB_RPC_DISC_PORT:-30324}" \
   --discovery.v5.port "${FB_RPC_DISC_V5_PORT:-9201}" \
   --rollup.sequencer-http "$RB_RPC_URL" \
-  --flashblocks-url ws://localhost:"$FB_PROXY_PORT"
+  --flashblocks-url ws://localhost:"$FB_PROXY_PORT"/ws

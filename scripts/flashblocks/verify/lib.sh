@@ -175,24 +175,10 @@ set_boost_mode() {
   boost_mode
 }
 
-# Rewrite FLASHBLOCKS_MODE in .envrc. <off|dry_run|enabled>
-# That value is the *initial* mode, deciding which components chain-start brings up; use
-# set_boost_mode to switch a running chain. python instead of sed -i because the BSD and
-# GNU flag syntaxes differ and this has to replace the line if present and append if not.
-set_envrc_mode() {
-  _FB_MODE="$1" python3 - <<'PY'
-import os
-import re
-from pathlib import Path
-
-mode = os.environ["_FB_MODE"]
-path = Path(".envrc")
-text = path.read_text()
-pattern = re.compile(r"^export FLASHBLOCKS_MODE=.*$", re.M)
-replacement = f"export FLASHBLOCKS_MODE={mode}"
-path.write_text(pattern.sub(replacement, text) if pattern.search(text) else text.rstrip("\n") + "\n" + replacement + "\n")
-PY
-}
+# set_envrc_mode <off|dry_run|enabled> rewrites the *initial* mode, which decides what
+# chain-start brings up; use set_boost_mode to switch a chain that is already running.
+# shellcheck source=scripts/flashblocks/envrc-mode.sh
+source "$BASE_PATH/scripts/flashblocks/envrc-mode.sh"
 
 # Height of one head reported by optimism_syncStatus.
 # sync_head <opnode-rpc> <unsafe_l2|safe_l2|finalized_l2>; output -1 when unavailable.

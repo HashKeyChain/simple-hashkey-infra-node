@@ -46,7 +46,11 @@ bash scripts/flashblocks/build-flashblocks.sh
 
 ```bash
 # DESTRUCTIVE: delete the old chain, redeploy, and advance to Jovian.
+# Contracts are reused when already built at $OP_CONTRACTS_REF (saves several minutes).
 bash scripts/deploy-chain/deploy-jovian-chain.sh local --reset -y
+
+# Same, but force a clean contract rebuild (forge clean + forge install + full build).
+bash scripts/deploy-chain/deploy-jovian-chain.sh local --reset -y --rebuild-contracts
 
 # Deploy only a Fjord baseline.
 bash scripts/deploy-chain/chain-setup.sh local
@@ -104,9 +108,7 @@ bash scripts/flashblocks/verify/p3-enabled.sh --watch=30
 ### D. Switch `enabled → off`
 
 ```bash
-sed -i.bak \
-  's/^export FLASHBLOCKS_MODE=.*/export FLASHBLOCKS_MODE=off/' \
-  .envrc && rm -f .envrc.bak
+bash scripts/flashblocks/envrc-mode.sh off
 
 bash scripts/chain-ops/chain-stop.sh
 bash scripts/chain-ops/chain-start.sh local
@@ -319,7 +321,38 @@ Expected result:
 true
 ```
 
-### 3.2 Deploy Only the Fjord Baseline
+### 3.2 Contract Build Reuse
+
+Deployment reuses the existing Forge artifacts when the contracts submodule is already
+checked out at `$OP_CONTRACTS_REF` and `forge-artifacts/` is non-empty. It then skips
+`git checkout`, `forge clean`, and `forge install`, which is the multi-minute part of a
+redeploy. `forge build` still runs every time: it is incremental, so it costs about three
+seconds on a cache hit while still catching an edited `.sol` that the ref check cannot see.
+
+`chain-reset` deletes only `data/` and `config/<context>/`, so `--reset` does not
+invalidate the artifacts.
+
+Force the full rebuild when `lib/` or the artifacts are suspected to be inconsistent:
+
+```bash
+bash scripts/deploy-chain/deploy-jovian-chain.sh local --reset -y --rebuild-contracts
+```
+
+`chain-setup.sh` and `deploy-contracts.sh` have no such flag; set the environment variable
+the flag exports:
+
+```bash
+REBUILD_CONTRACTS=1 bash scripts/deploy-chain/chain-setup.sh local
+```
+
+The deployment banner prints which path is in effect:
+
+```text
+contracts = reuse artifacts when already at $OP_CONTRACTS_REF
+contracts = forced rebuild
+```
+
+### 3.3 Deploy Only the Fjord Baseline
 
 ```bash
 bash scripts/deploy-chain/chain-setup.sh local
@@ -491,13 +524,14 @@ live dry_run-to-enabled switch. It does not run P2, P3, or P4.
 ### 5.5 Switch `enabled → off`
 
 ```bash
-sed -i.bak \
-  's/^export FLASHBLOCKS_MODE=.*/export FLASHBLOCKS_MODE=off/' \
-  .envrc && rm -f .envrc.bak
+bash scripts/flashblocks/envrc-mode.sh off
 
 bash scripts/chain-ops/chain-stop.sh
 bash scripts/chain-ops/chain-start.sh local
 ```
+
+`envrc-mode.sh` is the single writer of `FLASHBLOCKS_MODE`. It replaces the line when
+present, appends it when absent, and reads the file back before reporting success.
 
 Confirm continued block production:
 
@@ -643,9 +677,7 @@ partially restarted. Missing history is not backfilled.
 Recover through off mode and a complete dry_run synchronization:
 
 ```bash
-sed -i.bak \
-  's/^export FLASHBLOCKS_MODE=.*/export FLASHBLOCKS_MODE=off/' \
-  .envrc && rm -f .envrc.bak
+bash scripts/flashblocks/envrc-mode.sh off
 
 bash scripts/chain-ops/chain-stop.sh
 bash scripts/chain-ops/chain-start.sh local

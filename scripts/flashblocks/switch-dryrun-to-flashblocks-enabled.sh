@@ -9,6 +9,8 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 BASE_PATH=$(cd "$SCRIPT_DIR/../.." && pwd)
 cd "$BASE_PATH"
 source .envrc
+# shellcheck source=scripts/flashblocks/envrc-mode.sh
+source "$SCRIPT_DIR/envrc-mode.sh"
 
 RB_DEBUG="http://localhost:${RB_DEBUG_PORT:-5555}"
 
@@ -38,10 +40,7 @@ if [ "$mode" != "enabled" ]; then
   exit 1
 fi
 
-sed -i.bak \
-  's/^export FLASHBLOCKS_MODE=.*/export FLASHBLOCKS_MODE=enabled/' \
-  .envrc
-rm -f .envrc.bak
+set_envrc_mode enabled
 
 echo "Flashblocks switched live: dry_run → enabled"
 echo "User RPC: http://localhost:${FB_RPC_HTTP_PORT:-8745}"

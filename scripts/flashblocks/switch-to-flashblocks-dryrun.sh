@@ -46,6 +46,8 @@ cd "$BASE_PATH"
 source .envrc
 
 FB_DIR="$BASE_PATH/scripts/flashblocks"
+# shellcheck source=scripts/flashblocks/envrc-mode.sh
+source "$FB_DIR/envrc-mode.sh"
 CHAIN_OPS_DIR="$BASE_PATH/scripts/chain-ops"
 DATA_DIR="$BASE_PATH/data"
 LOG_DIR="$DATA_DIR/logs"
@@ -236,18 +238,6 @@ stop_rollup_boost() { stop_pidfile rollup-boost; stop_match "rollup-boost " "--r
 PHASE=0
 STOP_HASH=""
 SWITCH_DONE=0
-
-set_envrc_mode() {
-  _FB_MODE="$1" python3 - <<'PY'
-import os, re
-from pathlib import Path
-mode = os.environ["_FB_MODE"]
-p = Path(".envrc"); t = p.read_text()
-pat = re.compile(r'^export FLASHBLOCKS_MODE=.*$', re.M)
-repl = f'export FLASHBLOCKS_MODE={mode}'
-p.write_text(pat.sub(repl, t) if pat.search(t) else t.rstrip("\n") + "\n" + repl + "\n")
-PY
-}
 
 on_exit() {
   local rc=$?
