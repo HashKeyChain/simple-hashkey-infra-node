@@ -6,6 +6,9 @@
 # ignore binary files
 bin/*
 
+# Build artifacts for the validation scripts' Go helpers (lib.sh builds them automatically as needed)
+scripts/flashblocks/verify/bin/
+
 # geth database dir
 data
 
