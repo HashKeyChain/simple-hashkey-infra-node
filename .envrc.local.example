@@ -44,6 +44,41 @@ export L2_BLOCK_TIME=2
 # debug_geth, erigon, basic, any.
 export L1_RPC_KIND=alchemy
 
+# ===== op-node Engine 端点（默认直连 op-geth；可指向中间件代理）=====
+# 不设置时，scripts/run-op-node.sh 拼出 --l2=http://localhost:8651，
+# 即直连本机 op-geth 的 authrpc —— 与不加本变量时的历史行为逐字节一致。
+#
+# 设置后，op-node 的 Engine 流量改发给该地址。用于在 op-node 与执行层之间插入
+# 透明代理（如 engine-api-proxy）：代理拦截 engine_getPayload* 的响应、算出区块
+# payloadHash 落库，再把请求原样转发给 op-geth。
+#
+# 注意：不能靠导出 op-node 自带的 OP_NODE_L2_ENGINE_RPC 来改。urfave/cli 的命令行
+# 优先级高于 EnvVars，只要启动脚本仍然拼出 --l2=，该环境变量就会被忽略。
+#
+# 代理的 JWT 与 op-geth 共用 data/op-geth/jwt.txt（chain-start.sh 生成），
+# 入站校验与出站签发都指向它即可。
+# 启动顺序：代理需先于 op-node 起（op-node 启动时会 ping 签名器的 health_status）；
+# 「代理 → op-geth → op-node」是安全的，因为代理只在收到第一个请求时才连上游。
+# export L2_ENGINE_URL=http://127.0.0.1:8661
+
+# ===== op-node 远端区块签名器（默认关闭，用本地私钥签名）=====
+# 留空（默认）时，run-op-node.sh 下发 --p2p.sequencer.key=$GS_SEQUENCER_PRIVATE_KEY，
+# 与历史行为一致。
+#
+# 设置 OP_SIGNER_ENDPOINT 后，脚本会自动：
+#   1. 去掉 --p2p.sequencer.key —— 必须去掉，否则 op-node 会以
+#      "cannot specify both a private key and a remote signer for sequencer p2p"
+#      拒绝启动（见 op-node/p2p/cli/load_signer.go）。
+#   2. 追加 --signer.endpoint / --signer.address / --signer.tls.enabled=false。
+#      其中 --signer.tls.enabled 默认为 true，指向明文 HTTP 端点时必须显式关掉，
+#      否则 op-node 会对着一个 HTTP 端口发 TLS 握手而连不上。
+#
+# 远端签名器只有 endpoint 与 address 同时非空才算启用
+# （op-service/signer 的 CLIConfig.Enabled()），故脚本总是成对下发；
+# OP_SIGNER_ADDRESS 不设时默认取 $GS_SEQUENCER_ADDRESS。
+# export OP_SIGNER_ENDPOINT=http://127.0.0.1:8551
+# export OP_SIGNER_ADDRESS=$GS_SEQUENCER_ADDRESS
+
 ##################################################
 #               Contract Deployment              #
 ##################################################
@@ -172,6 +207,12 @@ export RESPECTED_GAME_TYPE=$GAME_TYPE
 # other 4 forks left empty. To activate a new fork later: set the target timestamp
 # here, then run scripts/activate-fork.sh (auto stops the chain, syncs rollup.json,
 # restarts L2 with the new params). See scripts/jovian, doc/*upgrade_runbook.md.
+#
+# 提示：下面 granite 之后的 4 项在模板里是留空的，照模板原样建出来的链只到 fjord。
+# 若要验证 Jovian（本分支的目标场景，也是生产当前所处的分叉），必须把这 4 个时间戳
+# 都填上再跑 chain-setup.sh —— 它会调用 patch-rollup-config.sh 把值写进 rollup.json。
+# 填好 .envrc 跑一次 chain-setup.sh 就够，不需要单独跑 activate-fork.sh；
+# 但它不清 data/op-geth，换创世前要先跑 chain-reset.sh。
 export FORK_FJORD_TIME=0
 export FORK_GRANITE_TIME=
 export FORK_HOLOCENE_TIME=
