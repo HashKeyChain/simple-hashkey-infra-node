@@ -6,8 +6,9 @@
 # ignore binary files
 bin/*
 
-# Build artifacts for the validation scripts' Go helpers (lib.sh builds them automatically as needed)
+# Build artifacts for the validation scripts' Go helpers (the scripts build them automatically as needed)
 scripts/flashblocks/verify/bin/
+scripts/flashblocks/remote-verify/bin/
 
 # geth database dir
 data
@@ -19,3 +20,6 @@ config/getting-started/*.json
 config/sepolia/*.json
 config/mainnet/*.json
 config/testnet/*.json
+
+scripts/flashblocks/remote-verify/env.*
+!scripts/flashblocks/remote-verify/env.*.example
