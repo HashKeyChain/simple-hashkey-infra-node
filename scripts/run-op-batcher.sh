@@ -13,7 +13,10 @@ L1_RPC_URL="${_CALLER_L1_RPC_URL:-$L1_RPC_URL}"
 
 echo "Starting op-batcher ..."
 
-base_flags="--log.level=debug --l1-eth-rpc=$L1_RPC_URL --l2-eth-rpc=$L2_RPC_URL --rpc.port=$OP_BATCHER_PORT --rollup-rpc=$OP_NODE_RPC_URL --private-key=${GS_BATCHER_PRIVATE_KEY}"
+# --rpc.addr 必须显式绑回环：op-service/rpc 的默认值是 0.0.0.0，而下面 misc_flags 里开了
+# --rpc.enable-admin，意味着不设此项时同网段任何人都能调 admin 接口启停批次提交。
+# 实测（改前）：lsof 显示 TCP *:9645 (LISTEN)，且从本机局域网 IP 可连通。
+base_flags="--log.level=debug --l1-eth-rpc=$L1_RPC_URL --l2-eth-rpc=$L2_RPC_URL --rpc.addr=127.0.0.1 --rpc.port=$OP_BATCHER_PORT --rollup-rpc=$OP_NODE_RPC_URL --private-key=${GS_BATCHER_PRIVATE_KEY}"
 
 batcher_flags="--max-channel-duration=${MAX_CHANNEL_DURATION:-300} --poll-interval=${POLL_INTERVAL:-6s} --sub-safety-margin=${SUB_SAFETY_MARGIN:-10} --resubmission-timeout=${RESUBMISSION_TIMEOUT:-48s} --max-l1-tx-size-bytes=${MAX_L1_TX_SIZE_BYTES:-1000} --data-availability-type=${OP_BATCHER_DATA_AVAILABILITY_TYPE:-calldata}"
 

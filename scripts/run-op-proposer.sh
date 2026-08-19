@@ -16,7 +16,9 @@ L1_RPC_URL="${_CALLER_L1_RPC_URL:-$L1_RPC_URL}"
 # 而非 .envrc 默认指向的 optimism/.../deployments/（构建原始产物）。
 DEPLOYMENT_OUTFILE="${_CALLER_DEPLOYMENT_OUTFILE:-${DEPLOYMENT_CONFIG_PATH:-$BASE_PATH/config/$DEPLOYMENT_CONTEXT}/artifact.json}"
 
-base_flags="--log.level=debug --rpc.port=8560 --rollup-rpc=$OP_NODE_RPC_URL --private-key=$GS_PROPOSER_PRIVATE_KEY --l1-eth-rpc=$L1_RPC_URL"
+# --rpc.addr 必须显式绑回环：op-service/rpc 的默认值是 0.0.0.0。
+# 实测（改前）：lsof 显示 TCP *:8560 (LISTEN)，且从本机局域网 IP 可连通。
+base_flags="--log.level=debug --rpc.addr=127.0.0.1 --rpc.port=8560 --rollup-rpc=$OP_NODE_RPC_URL --private-key=$GS_PROPOSER_PRIVATE_KEY --l1-eth-rpc=$L1_RPC_URL"
 
 proposer_flags=""
 if [ "$USE_FAULT_PROOFS" = "true" ]; then

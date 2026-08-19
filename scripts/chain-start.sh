@@ -130,14 +130,57 @@ nohup bash "$SCRIPT_DIR/run-op-geth.sh" >> "$LOG_DIR/op-geth.log" 2>&1 &
 echo $! > "$PID_DIR/op-geth.pid"
 echo "  op-geth started (pid $(cat $PID_DIR/op-geth.pid)), log: $LOG_DIR/op-geth.log"
 
-# 等待 engine RPC 就绪
-echo "Waiting for op-geth engine..."
+# ---------- [健康检查 1/2] op-geth 自身的公开 HTTP RPC ----------
+# 只证明「刚拉起的这个执行层活了」。原先这里是唯一的检查，且循环跑完 30 次也不报错、
+# 直接往下走，op-geth 起不来时会被静默吞掉，故补上失败即退出。
+echo "Waiting for op-geth HTTP RPC at http://localhost:$OP_GETH_HTTP_PORT ..."
+geth_ready=0
 for i in $(seq 1 30); do
-  if curl -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' http://localhost:8645 &>/dev/null; then
+  if curl -s --max-time 2 -X POST -H "Content-Type: application/json" \
+      --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+      "http://localhost:$OP_GETH_HTTP_PORT" >/dev/null 2>&1; then
+    geth_ready=1
     break
   fi
   sleep 1
 done
+if [ "$geth_ready" != "1" ]; then
+  echo "Error: op-geth HTTP RPC 30s 内未就绪，日志: $LOG_DIR/op-geth.log"
+  exit 1
+fi
+echo "  op-geth HTTP RPC 就绪"
+
+# ---------- [健康检查 2/2] op-node 将要连接的 Engine 端点 ----------
+# 探测目标必须是 L2_ENGINE_URL —— 即 run-op-node.sh 拼进 --l2= 的那个地址。
+# 默认是 op-geth 的 authrpc；若指向中间件代理（engine-api-proxy），探的就是代理。
+# 上面那条 8645 的检查替代不了这一条：代理没起来时 op-geth 的公开 RPC 照样通，
+# 而 op-node 会连不上 Engine。这里显式 export，保证探测地址与 op-node 实际用的
+# 地址是同一个值，不会各自默认导致漂移。
+export L2_ENGINE_URL="${L2_ENGINE_URL:-http://localhost:$OP_GETH_AUTHRPC_PORT}"
+echo "Waiting for L2 engine endpoint at $L2_ENGINE_URL ..."
+# 判活标准是「有没有 HTTP 应答」，不是「是不是 200」：Engine 端点带 JWT 鉴权，
+# 不带凭据时它的正确行为就是拒绝（geth 的 authrpc 回 401），这恰恰证明进程活着且
+# 鉴权生效。只有完全连不上（连接被拒/超时，curl 写不出状态码即 000）才算没起来。
+engine_ready=0
+engine_code=""
+for i in $(seq 1 30); do
+  engine_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
+    -X POST -H "Content-Type: application/json" \
+    --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+    "$L2_ENGINE_URL" 2>/dev/null) || engine_code="000"
+  case "$engine_code" in
+    000|"") : ;;                  # 连不上，继续等
+    *)      engine_ready=1; break ;;   # 收到任何 HTTP 应答即视为存活
+  esac
+  sleep 1
+done
+if [ "$engine_ready" != "1" ]; then
+  echo "Error: Engine 端点 $L2_ENGINE_URL 30s 内无任何 HTTP 应答。"
+  echo "  若 L2_ENGINE_URL 指向中间件代理，请确认代理已先于本脚本启动。"
+  echo "  op-geth 日志: $LOG_DIR/op-geth.log"
+  exit 1
+fi
+echo "  engine endpoint 就绪 (HTTP $engine_code；401 = JWT 鉴权生效且进程存活)"
 sleep 2
 
 # ---------- 启动 op-node（组件 flags 见 run-op-node.sh）----------
@@ -181,6 +224,7 @@ echo ""
 echo "=== All services started ==="
 echo "  L2 RPC:      $L2_RPC_URL"
 echo "  Rollup RPC:  $OP_NODE_RPC_URL"
+echo "  L2 Engine:   $L2_ENGINE_URL  (op-node --l2)"
 echo "  PIDs:        $PID_DIR/*.pid"
 echo "  Logs:        $LOG_DIR/*.log"
 echo ""
