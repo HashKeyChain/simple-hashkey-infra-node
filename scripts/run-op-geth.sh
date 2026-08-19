@@ -18,7 +18,10 @@ JWT_FILE="${_CALLER_JWT_FILE:-$OP_GETH_DATA_PATH/jwt.txt}"
 # 与 rollup.json 的 *_time（patch-rollup-config.sh 写入）同源，保证 geth/op-node 一致。
 override_flags="${FORK_FJORD_TIME:+--override.fjord=$FORK_FJORD_TIME} ${FORK_GRANITE_TIME:+--override.granite=$FORK_GRANITE_TIME} ${FORK_HOLOCENE_TIME:+--override.holocene=$FORK_HOLOCENE_TIME} ${FORK_ISTHMUS_TIME:+--override.isthmus=$FORK_ISTHMUS_TIME} ${FORK_JOVIAN_TIME:+--override.jovian=$FORK_JOVIAN_TIME}"
 
-flags="--verbosity=3 --datadir=$OP_GETH_DATA_PATH --http --http.corsdomain=* --http.vhosts=* --http.addr=0.0.0.0 --http.port=8645 --http.api=web3,debug,eth,txpool,net,engine,miner --ws --ws.addr=0.0.0.0 --ws.port=8646 --ws.origins=* --ws.api=debug,eth,txpool,net,engine,miner --syncmode=full --gcmode=archive --nodiscover --maxpeers=0 --networkid=42069 --authrpc.vhosts=* --authrpc.addr=0.0.0.0 --authrpc.port=8651 --authrpc.jwtsecret=$JWT_FILE --state.scheme=hash $override_flags"
+# 监听地址一律绑回环：本链的消费方（op-node、op-batcher、op-proposer、op-challenger、cast）
+# 都跑在本机，无需对外可达。authrpc(8651) 是 Engine API 端口，一旦对所有网卡开放，
+# 同网段任何人都能驱动出块，故必须绑 127.0.0.1。
+flags="--verbosity=3 --datadir=$OP_GETH_DATA_PATH --http --http.corsdomain=* --http.vhosts=* --http.addr=127.0.0.1 --http.port=8645 --http.api=web3,debug,eth,txpool,net,engine,miner --ws --ws.addr=127.0.0.1 --ws.port=8646 --ws.origins=* --ws.api=debug,eth,txpool,net,engine,miner --syncmode=full --gcmode=archive --nodiscover --maxpeers=0 --networkid=42069 --authrpc.vhosts=* --authrpc.addr=127.0.0.1 --authrpc.port=8651 --authrpc.jwtsecret=$JWT_FILE --state.scheme=hash $override_flags"
 
 echo "Starting op-geth ..."
 echo "op-geth $flags"

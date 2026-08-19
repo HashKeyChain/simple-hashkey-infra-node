@@ -77,7 +77,8 @@ ANVIL_PID=""
 if [ "$CHAIN_ENV" = "local" ]; then
   if ! cast block latest --rpc-url "$L1_RPC_URL" &>/dev/null; then
     echo "L1 not running. Starting anvil in background with block time ${L1_BLOCK_TIME}s..."
-    docker run --rm -d -p 8545:8545 --name anvil-chain \
+    # 端口发布限制在宿主回环；容器内 --host=0.0.0.0 必须保留（理由见 chain-start.sh）。
+    docker run --rm -d -p 127.0.0.1:8545:8545 --name anvil-chain \
       --entrypoint anvil ghcr.io/foundry-rs/foundry:v1.3.2 \
       --chain-id=$L1_CHAIN_ID --accounts=20 --host=0.0.0.0 \
       --slots-in-an-epoch=1 --block-time $L1_BLOCK_TIME

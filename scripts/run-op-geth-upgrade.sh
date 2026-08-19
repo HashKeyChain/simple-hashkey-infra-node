@@ -65,8 +65,9 @@ echo "============================================"
 echo "  Starting op-geth with Jovian enabled"
 echo "============================================"
 
-base_flags="--verbosity=3 --datadir=${OP_GETH_DATA_PATH} --http --http.corsdomain=* --http.vhosts=* --http.addr=0.0.0.0 --http.port=8645 --http.api=web3,debug,eth,txpool,net,engine,miner --ws --ws.addr=0.0.0.0 --ws.port=8646 --ws.origins=* --ws.api=debug,eth,txpool,net,engine,miner"
-geth_flags="--syncmode=full --gcmode=archive --nodiscover --maxpeers=0 --networkid=42069 --authrpc.vhosts=* --authrpc.addr=0.0.0.0 --authrpc.port=8651 --authrpc.jwtsecret=${OP_GETH_DATA_PATH}/jwt.txt --state.scheme=hash"
+# 监听地址一律绑回环，理由见 run-op-geth.sh（authrpc 是 Engine API 端口，不得对外可达）。
+base_flags="--verbosity=3 --datadir=${OP_GETH_DATA_PATH} --http --http.corsdomain=* --http.vhosts=* --http.addr=127.0.0.1 --http.port=8645 --http.api=web3,debug,eth,txpool,net,engine,miner --ws --ws.addr=127.0.0.1 --ws.port=8646 --ws.origins=* --ws.api=debug,eth,txpool,net,engine,miner"
+geth_flags="--syncmode=full --gcmode=archive --nodiscover --maxpeers=0 --networkid=42069 --authrpc.vhosts=* --authrpc.addr=127.0.0.1 --authrpc.port=8651 --authrpc.jwtsecret=${OP_GETH_DATA_PATH}/jwt.txt --state.scheme=hash"
 flags="$base_flags $geth_flags $OVERRIDE_FLAGS"
 
 echo "op-geth $flags"
