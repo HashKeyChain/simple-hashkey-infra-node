@@ -62,22 +62,51 @@ export L1_RPC_KIND=alchemy
 # export L2_ENGINE_URL=http://127.0.0.1:8661
 
 # ===== op-node 远端区块签名器（默认关闭，用本地私钥签名）=====
-# 留空（默认）时，run-op-node.sh 下发 --p2p.sequencer.key=$GS_SEQUENCER_PRIVATE_KEY，
-# 与历史行为一致。
+# 留空（默认）时，run-op-node.sh 下发 --p2p.sequencer.key=$GS_SEQUENCER_PRIVATE_KEY
+# 与 --p2p.disable，与历史行为一致。
 #
 # 设置 OP_SIGNER_ENDPOINT 后，脚本会自动：
 #   1. 去掉 --p2p.sequencer.key —— 必须去掉，否则 op-node 会以
 #      "cannot specify both a private key and a remote signer for sequencer p2p"
 #      拒绝启动（见 op-node/p2p/cli/load_signer.go）。
-#   2. 追加 --signer.endpoint / --signer.address / --signer.tls.enabled=false。
-#      其中 --signer.tls.enabled 默认为 true，指向明文 HTTP 端点时必须显式关掉，
-#      否则 op-node 会对着一个 HTTP 端口发 TLS 握手而连不上。
+#   2. 追加 --signer.endpoint / --signer.address / --signer.tls.enabled=true
+#      以及 --signer.tls.ca/cert/key（取自下面三个变量）。
+#   3. 把 p2p 从禁用改成"启用但不对外"（--p2p.disable=false --p2p.no-discovery
+#      --p2p.listen.ip=127.0.0.1），并打开 metrics。
+#
+# 上面第 3 条是这套配置里最要命的一条，务必别自己改回去：
+#   p2p 被禁用时 op-node 的 SignAndPublishL2Payload（op-node/node/node.go:803）
+#   直接 return nil，**远端签名器一次都不会被调用**；而 initP2PSigner（node.go:264）
+#   是无条件执行的，op-node 照样连上签名器并打印 "Connected to op-signer server"。
+#   于是链正常出块、签名器连着、发布错误计数恒为 0 —— 全绿，但签名链路一次没走过。
+#   run-op-node.sh 在启动前会断言这个组合不存在，撞上会直接拒绝启动。
+#   另外签名失败只体现在 op-node 的 publishing_errors 计数上（区块签名跑在独立
+#   goroutine 里，出块循环不等它、也不看它），所以远端签名时 metrics 必须开着。
+#
+# 端点写法有两个硬约束，都是实测踩出来的：
+#   - **scheme 必须是 https**。go-ethereum 的 rpc 传输层按 URL scheme 决定要不要
+#     TLS，写 http:// 时客户端证书配了也不会被用到，发出去是明文请求，撞上
+#     op-signer 的 TLS 监听直接握手失败。写 http:// 时脚本会拒绝启动。
+#   - **主机名必须匹配签名器证书的 DNS SAN**。证书通常只签 DNS SAN（localhost）、
+#     没有 IP SAN，所以 127.0.0.1 不行、localhost 才行（同样解析到回环，
+#     "只绑回环" 的约束不受影响）。
+#
+# 还有一条：op-signer 是无条件 mTLS，它的 auth 中间件在 tls.enabled=false 时同样
+# 要求客户端叶证书，**没有明文模式**，所以 --signer.tls.enabled=false 这个组合
+# 永远连不上（连启动时的 health_status 都过不去）。
 #
 # 远端签名器只有 endpoint 与 address 同时非空才算启用
 # （op-service/signer 的 CLIConfig.Enabled()），故脚本总是成对下发；
 # OP_SIGNER_ADDRESS 不设时默认取 $GS_SEQUENCER_ADDRESS。
-# export OP_SIGNER_ENDPOINT=http://127.0.0.1:8551
+# export OP_SIGNER_ENDPOINT=https://localhost:8570
 # export OP_SIGNER_ADDRESS=$GS_SEQUENCER_ADDRESS
+# mTLS 凭据，三项必须成套给（只给一部分时 op-node 会去用它自己的默认相对路径
+# tls/ca.crt、tls/tls.crt、tls/tls.key，那是另一种难查的失败）。
+# export OP_SIGNER_TLS_CA=/abs/path/ca.crt
+# export OP_SIGNER_TLS_CERT=/abs/path/tls.crt
+# export OP_SIGNER_TLS_KEY=/abs/path/tls.key
+# op-node metrics 端口（远端签名时自动开启，默认 7300）。
+# export OP_NODE_METRICS_PORT=7300
 
 ##################################################
 #               Contract Deployment              #
