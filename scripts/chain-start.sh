@@ -32,6 +32,30 @@ LOG_DIR="${DATA_DIR}/logs"
 PID_DIR="${DATA_DIR}/pids"
 mkdir -p "$LOG_DIR" "$PID_DIR"
 
+# ---------- 后台拉起服务 ----------
+# 不能用 `nohup cmd &`：nohup 只挡 SIGHUP。本脚本常跑在终端 / CI 步骤 / 某种工具会话里，
+# 那类会话结束时会给**整个进程组**发信号（包括 SIGKILL），nohup 与 disown 都拦不住 ——
+# 表现就是本脚本所在的会话一结束，op-geth / op-node / batcher / proposer 一起变 DEAD。
+# 这已经真实发生过一次。唯一可靠的做法是让子进程 setsid 进入自己的会话。
+#
+# 为什么走 lib/spawn.py 而不是 setsid 命令：macOS 根本没有 setsid 命令；而 util-linux 的
+# setsid 在自己已是进程组组长时会 fork，此时 `setsid cmd &` 的 $! 拿到的是随即退出的
+# 那个 setsid，pid 文件当场失真。spawn.py 自己 fork + setsid + exec，打印出来的 pid
+# 就是最终那个进程，两个平台行为一致。
+command -v python3 >/dev/null 2>&1 || {
+  echo "Error: 需要 python3 —— 服务要用 scripts/lib/spawn.py 脱离当前会话后台拉起。" >&2
+  echo "       否则启动本脚本的会话一结束，所有组件会被一起杀掉。" >&2
+  exit 1
+}
+
+spawn_service() {  # $1=服务名（决定 log/pid 文件名）；其余参数=要执行的命令
+  local name="$1"; shift
+  local log="$LOG_DIR/$name.log" pid
+  pid=$(python3 "$SCRIPT_DIR/lib/spawn.py" "$log" -- "$@")
+  echo "$pid" > "$PID_DIR/$name.pid"
+  echo "  $name started (pid $pid), log: $log"
+}
+
 # 解析运行环境
 CHAIN_ENV="${1:-}"
 if [ -z "$CHAIN_ENV" ]; then
@@ -126,9 +150,7 @@ export _CALLER_SAFEDB_PATH="$SAFEDB_PATH"
 
 # ---------- 启动 op-geth（组件 flags 见 run-op-geth.sh）----------
 echo "Starting op-geth..."
-nohup bash "$SCRIPT_DIR/run-op-geth.sh" >> "$LOG_DIR/op-geth.log" 2>&1 &
-echo $! > "$PID_DIR/op-geth.pid"
-echo "  op-geth started (pid $(cat $PID_DIR/op-geth.pid)), log: $LOG_DIR/op-geth.log"
+spawn_service op-geth bash "$SCRIPT_DIR/run-op-geth.sh"
 
 # ---------- [健康检查 1/2] op-geth 自身的公开 HTTP RPC ----------
 # 只证明「刚拉起的这个执行层活了」。原先这里是唯一的检查，且循环跑完 30 次也不报错、
@@ -185,18 +207,14 @@ sleep 2
 
 # ---------- 启动 op-node（组件 flags 见 run-op-node.sh）----------
 echo "Starting op-node..."
-nohup bash "$SCRIPT_DIR/run-op-node.sh" >> "$LOG_DIR/op-node.log" 2>&1 &
-echo $! > "$PID_DIR/op-node.pid"
-echo "  op-node started (pid $(cat $PID_DIR/op-node.pid)), log: $LOG_DIR/op-node.log"
+spawn_service op-node bash "$SCRIPT_DIR/run-op-node.sh"
 
 sleep 3
 
 # ---------- 启动 op-batcher（可选；组件 flags 见 run-op-batcher.sh）----------
 if [ "${SKIP_BATCHER:-0}" != "1" ]; then
   echo "Starting op-batcher..."
-  nohup bash "$SCRIPT_DIR/run-op-batcher.sh" >> "$LOG_DIR/op-batcher.log" 2>&1 &
-  echo $! > "$PID_DIR/op-batcher.pid"
-  echo "  op-batcher started (pid $(cat $PID_DIR/op-batcher.pid)), log: $LOG_DIR/op-batcher.log"
+  spawn_service op-batcher bash "$SCRIPT_DIR/run-op-batcher.sh"
 fi
 
 # ---------- 启动 op-proposer（可选；组件 flags 见 run-op-proposer.sh）----------
@@ -204,9 +222,7 @@ fi
 #     proposer 首次即可建 game，无需再单独初始化 anchor。
 if [ "${SKIP_PROPOSER:-0}" != "1" ]; then
   echo "Starting op-proposer..."
-  nohup bash "$SCRIPT_DIR/run-op-proposer.sh" >> "$LOG_DIR/op-proposer.log" 2>&1 &
-  echo $! > "$PID_DIR/op-proposer.pid"
-  echo "  op-proposer started (pid $(cat $PID_DIR/op-proposer.pid)), log: $LOG_DIR/op-proposer.log"
+  spawn_service op-proposer bash "$SCRIPT_DIR/run-op-proposer.sh"
 fi
 
 # ---------- 启动 op-challenger（仅 FP 模式；组件 flags 见 run-op-challenger.sh）----------
@@ -215,9 +231,7 @@ fi
 if [ "${USE_FAULT_PROOFS:-false}" = "true" ] && [ "${SKIP_CHALLENGER:-0}" != "1" ]; then
   sleep 3
   echo "Starting op-challenger..."
-  nohup bash "$SCRIPT_DIR/run-op-challenger.sh" >> "$LOG_DIR/op-challenger.log" 2>&1 &
-  echo $! > "$PID_DIR/op-challenger.pid"
-  echo "  op-challenger started (pid $(cat $PID_DIR/op-challenger.pid)), log: $LOG_DIR/op-challenger.log"
+  spawn_service op-challenger bash "$SCRIPT_DIR/run-op-challenger.sh"
 fi
 
 echo ""
