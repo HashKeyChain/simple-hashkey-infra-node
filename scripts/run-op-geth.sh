@@ -18,10 +18,17 @@ JWT_FILE="${_CALLER_JWT_FILE:-$OP_GETH_DATA_PATH/jwt.txt}"
 # 与 rollup.json 的 *_time（patch-rollup-config.sh 写入）同源，保证 geth/op-node 一致。
 override_flags="${FORK_FJORD_TIME:+--override.fjord=$FORK_FJORD_TIME} ${FORK_GRANITE_TIME:+--override.granite=$FORK_GRANITE_TIME} ${FORK_HOLOCENE_TIME:+--override.holocene=$FORK_HOLOCENE_TIME} ${FORK_ISTHMUS_TIME:+--override.isthmus=$FORK_ISTHMUS_TIME} ${FORK_JOVIAN_TIME:+--override.jovian=$FORK_JOVIAN_TIME}"
 
+# 端口取 .envrc 的 OP_GETH_*_PORT，不在这里写死：chain-start.sh 的健康检查探的是
+# 同一批变量，两边各自硬编码就会在改端口时静默探错端口（探到活着的另一个服务，
+# 于是"就绪"判定通过，实际 op-node 连不上）。
+GETH_HTTP_PORT="${OP_GETH_HTTP_PORT:-8645}"
+GETH_WS_PORT="${OP_GETH_WS_PORT:-8646}"
+GETH_AUTHRPC_PORT="${OP_GETH_AUTHRPC_PORT:-8651}"
+
 # 监听地址一律绑回环：本链的消费方（op-node、op-batcher、op-proposer、op-challenger、cast）
-# 都跑在本机，无需对外可达。authrpc(8651) 是 Engine API 端口，一旦对所有网卡开放，
+# 都跑在本机，无需对外可达。authrpc 是 Engine API 端口，一旦对所有网卡开放，
 # 同网段任何人都能驱动出块，故必须绑 127.0.0.1。
-flags="--verbosity=3 --datadir=$OP_GETH_DATA_PATH --http --http.corsdomain=* --http.vhosts=* --http.addr=127.0.0.1 --http.port=8645 --http.api=web3,debug,eth,txpool,net,engine,miner --ws --ws.addr=127.0.0.1 --ws.port=8646 --ws.origins=* --ws.api=debug,eth,txpool,net,engine,miner --syncmode=full --gcmode=archive --nodiscover --maxpeers=0 --networkid=42069 --authrpc.vhosts=* --authrpc.addr=127.0.0.1 --authrpc.port=8651 --authrpc.jwtsecret=$JWT_FILE --state.scheme=hash $override_flags"
+flags="--verbosity=3 --datadir=$OP_GETH_DATA_PATH --http --http.corsdomain=* --http.vhosts=* --http.addr=127.0.0.1 --http.port=$GETH_HTTP_PORT --http.api=web3,debug,eth,txpool,net,engine,miner --ws --ws.addr=127.0.0.1 --ws.port=$GETH_WS_PORT --ws.origins=* --ws.api=debug,eth,txpool,net,engine,miner --syncmode=full --gcmode=archive --nodiscover --maxpeers=0 --networkid=42069 --authrpc.vhosts=* --authrpc.addr=127.0.0.1 --authrpc.port=$GETH_AUTHRPC_PORT --authrpc.jwtsecret=$JWT_FILE --state.scheme=hash $override_flags"
 
 echo "Starting op-geth ..."
 echo "op-geth $flags"

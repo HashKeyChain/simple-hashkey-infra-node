@@ -180,29 +180,41 @@ echo "  op-geth HTTP RPC 就绪"
 # 地址是同一个值，不会各自默认导致漂移。
 export L2_ENGINE_URL="${L2_ENGINE_URL:-http://localhost:$OP_GETH_AUTHRPC_PORT}"
 echo "Waiting for L2 engine endpoint at $L2_ENGINE_URL ..."
-# 判活标准是「有没有 HTTP 应答」，不是「是不是 200」：Engine 端点带 JWT 鉴权，
-# 不带凭据时它的正确行为就是拒绝（geth 的 authrpc 回 401），这恰恰证明进程活着且
-# 鉴权生效。只有完全连不上（连接被拒/超时，curl 写不出状态码即 000）才算没起来。
+# 就绪判据是「不带 JWT 的请求被回 401」，不是「有 HTTP 应答就算活」。
+# 401 同时证明三件事：端口有人监听、监听的是一个带 JWT 鉴权的 Engine 端点、
+# 鉴权真的在生效。实测：op-geth 的 authrpc 回 401、engine-api-proxy 回 401，
+# 而 op-geth 的公开 HTTP RPC(8645) 回 200 —— 所以「有应答就算活」这个宽判据
+# 会把探到 8645 也当成代理就绪，那正是这条检查要排掉的情形。
 engine_ready=0
 engine_code=""
+engine_saw_http=0
 for i in $(seq 1 30); do
   engine_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
     -X POST -H "Content-Type: application/json" \
     --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
     "$L2_ENGINE_URL" 2>/dev/null) || engine_code="000"
   case "$engine_code" in
-    000|"") : ;;                  # 连不上，继续等
-    *)      engine_ready=1; break ;;   # 收到任何 HTTP 应答即视为存活
+    401)     engine_ready=1; break ;;   # 唯一的就绪信号
+    000|"")  : ;;                       # 连不上，继续等
+    *)       engine_saw_http=1 ;;       # 有人应答但不要 JWT，多半探错了东西
   esac
   sleep 1
 done
 if [ "$engine_ready" != "1" ]; then
-  echo "Error: Engine 端点 $L2_ENGINE_URL 30s 内无任何 HTTP 应答。"
-  echo "  若 L2_ENGINE_URL 指向中间件代理，请确认代理已先于本脚本启动。"
+  if [ "$engine_saw_http" = "1" ]; then
+    echo "Error: Engine 端点 $L2_ENGINE_URL 有 HTTP 应答（最后一次 HTTP $engine_code），但不带 JWT 时不回 401。"
+    echo "  这说明那个端口不是一个带鉴权的 Engine 端点。最常见的两种错法："
+    echo "    1) 指到了 op-geth 的公开 HTTP RPC（$OP_GETH_HTTP_PORT，不鉴权，回 200），"
+    echo "       Engine/authrpc 应该是 $OP_GETH_AUTHRPC_PORT；"
+    echo "    2) 指到了别的服务 / 一个不校验入站 JWT 的中间件。"
+  else
+    echo "Error: Engine 端点 $L2_ENGINE_URL 30s 内无任何 HTTP 应答。"
+    echo "  若 L2_ENGINE_URL 指向中间件代理，请确认代理已先于本脚本启动。"
+  fi
   echo "  op-geth 日志: $LOG_DIR/op-geth.log"
   exit 1
 fi
-echo "  engine endpoint 就绪 (HTTP $engine_code；401 = JWT 鉴权生效且进程存活)"
+echo "  engine endpoint 就绪 (无 JWT 请求回 HTTP 401 = 鉴权生效且进程存活)"
 sleep 2
 
 # ---------- 启动 op-node（组件 flags 见 run-op-node.sh）----------

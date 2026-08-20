@@ -24,7 +24,7 @@ mkdir -p "$(dirname "$SAFEDB_PATH")"
 # 由中间件透明转发给 op-geth，用于拦截 engine_getPayload* 计算并登记区块哈希。
 # 注意：不能靠导出 op-node 自带的 OP_NODE_L2_ENGINE_RPC 来改 —— urfave/cli 的命令行
 # 优先级高于 EnvVars，只要这里仍然拼出 --l2=，环境变量就会被忽略；故必须在此处组装。
-L2_ENGINE_URL="${L2_ENGINE_URL:-http://localhost:8651}"
+L2_ENGINE_URL="${L2_ENGINE_URL:-http://localhost:${OP_GETH_AUTHRPC_PORT:-8651}}"
 
 # 区块签名方式。**签名方式与 p2p 开关必须一起决定，不能分开配**，理由见下面第 3 条。
 #   - 默认（OP_SIGNER_ENDPOINT 留空）：用本地 sequencer 私钥签名 + --p2p.disable，
