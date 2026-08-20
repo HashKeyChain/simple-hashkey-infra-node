@@ -229,17 +229,24 @@ export RESPECTED_GAME_TYPE=$GAME_TYPE
 # fork activation; both consumers derive from them:
 #   - rollup.json *_time: written by scripts/patch-rollup-config.sh (read by op-node)
 #   - op-geth --override.*: assembled at startup by scripts/run-op-geth.sh (read by op-geth)
-# Values are unix seconds; 0 means active at genesis; empty means the fork is not
-# started (rollup.json set to null, no op-geth override).
+# Both go through scripts/lib/fork-times.sh, which is where the accepted forms and the
+# reason behind them are documented in full.
 #
-# A freshly set-up chain starts only from fjord: fjord=0 (active at genesis), the
-# other 4 forks left empty. To activate a new fork later: set the target timestamp
-# here, then run scripts/activate-fork.sh (auto stops the chain, syncs rollup.json,
-# restarts L2 with the new params). See scripts/jovian, doc/*upgrade_runbook.md.
+# Accepted forms:
+#   +N        offset from L2 genesis (genesis l2_time + N seconds). PREFERRED.
+#   <integer> absolute unix seconds (the only option for a real network's fixed schedule).
+#   0         active at genesis.
+#   empty     fork not scheduled (rollup.json null, no op-geth override).
+#
+# 为什么推荐 +N：创世时间每次 chain-reset + chain-setup 重建链都会变。写绝对秒就必须
+# 每次人工按新创世时间重算这几个数字，漏算一次就是「分叉不晚于创世」，后果是 op-geth
+# 起来就 panic: integer divide by zero，一个块都出不来（成因见 lib/fork-times.sh）。
+# 写 +N 时重建链不需要任何人工介入；就算坚持写绝对秒，fork-times.sh 也会在启动前把
+# 这个致命组合拦下来，不会再静默炸在运行时。
 #
 # 提示：下面 granite 之后的 4 项在模板里是留空的，照模板原样建出来的链只到 fjord。
-# 若要验证 Jovian（本分支的目标场景，也是生产当前所处的分叉），必须把这 4 个时间戳
-# 都填上再跑 chain-setup.sh —— 它会调用 patch-rollup-config.sh 把值写进 rollup.json。
+# 若要验证 Jovian（也是生产当前所处的分叉），把这 4 项填成 +60/+62/+64/+66 之类的偏移
+# 再跑 chain-setup.sh —— 它会调用 patch-rollup-config.sh 把解析后的绝对秒写进 rollup.json。
 # 填好 .envrc 跑一次 chain-setup.sh 就够，不需要单独跑 activate-fork.sh；
 # 但它不清 data/op-geth，换创世前要先跑 chain-reset.sh。
 export FORK_FJORD_TIME=0

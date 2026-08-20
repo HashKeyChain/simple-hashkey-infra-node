@@ -94,8 +94,14 @@ echo "  [3/4] chain_op_config 已确保"
 
 # ---------- [4/4] fork 激活时间：从 .envrc 单一真源同步到 rollup.json ----------
 # op-geth 的 --override.* 与 rollup.json 的 *_time 必须一致，两者都从 .envrc 的
-# FORK_*_TIME 派生（geth 侧见 OP_GETH_OVERRIDE_FLAGS）。此处把同一批值写进 rollup.json：
-# 变量非空 → 写入该时间戳；变量为空 → 置 null（表示该 fork 未调度）。
+# FORK_*_TIME 派生（geth 侧见 run-op-geth.sh 的 override_flags）。此处把同一批值写进
+# rollup.json：变量非空 → 写入该时间戳；变量为空 → 置 null（表示该 fork 未调度）。
+#
+# 写 "+N" 的相对偏移在这里解析成绝对秒（基准是本 rollup.json 的 .genesis.l2_time），
+# 所以重建链换了创世时间也不需要人工重算；顺带拦掉「分叉不晚于创世」这个致命取值。
+# 取值规则与失败后果见 scripts/lib/fork-times.sh。
+source "$SCRIPT_DIR/lib/fork-times.sh"
+resolve_fork_times "$ROLLUP_FILE" || exit 1
 sync_fork() {  # $1=rollup.json 里的 fork 名  $2=对应 FORK_*_TIME 值
   local key="$1" val="$2"
   if [ -n "$val" ]; then

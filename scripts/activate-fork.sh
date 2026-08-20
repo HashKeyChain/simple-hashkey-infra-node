@@ -50,11 +50,19 @@ if [ ! -f "$ROLLUP_FILE" ]; then
   exit 1
 fi
 
+# ---------- 解析 FORK_*_TIME（支持 "+N" 相对创世偏移；规则见 lib/fork-times.sh）----------
+# 下游的 patch-rollup-config.sh 与 run-op-geth.sh 各自也会解析同一批变量，基准同为本
+# rollup.json 的 .genesis.l2_time，因此三处结果必然一致。这里先解析一遍，是为了让下面
+# 打印与校验看到的是真正会生效的绝对秒。
+source "$SCRIPT_DIR/lib/fork-times.sh"
+resolve_fork_times "$ROLLUP_FILE" || exit 1
+
 # ---------- 打印将要生效的分叉配置（来源：.envrc FORK_*_TIME）----------
 echo "============================================"
 echo "  Activate fork ($CHAIN_ENV)"
 echo "============================================"
-echo "分叉时间（来源 .envrc FORK_*_TIME，空=不启动）:"
+echo "L2 创世时间（rollup.json .genesis.l2_time）: ${FORK_TIMES_GENESIS_L2_TIME:-<未知>}"
+echo "分叉时间（来源 .envrc FORK_*_TIME，已解析为绝对秒，空=不启动）:"
 printf '  %-9s %s\n' fjord    "${FORK_FJORD_TIME:-<未设置>}"
 printf '  %-9s %s\n' granite  "${FORK_GRANITE_TIME:-<未设置>}"
 printf '  %-9s %s\n' holocene "${FORK_HOLOCENE_TIME:-<未设置>}"

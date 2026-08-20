@@ -7,11 +7,19 @@
 # 注：datadir 初始化由 chain-start.sh 幂等负责，本脚本不再执行 op-geth init。
 #
 
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
+
 source .envrc
 
 # 允许被 chain-start 编排层通过 _CALLER_* 覆盖；单独运行时回落到 .envrc / 默认值。
 OP_GETH_DATA_PATH="${_CALLER_OP_GETH_DATA_PATH:-${OP_GETH_DATA_PATH:-$BASE_PATH/data/op-geth}}"
 JWT_FILE="${_CALLER_JWT_FILE:-$OP_GETH_DATA_PATH/jwt.txt}"
+ROLLUP_FILE="${_CALLER_OP_NODE_ROLLUP_FILE:-${DEPLOYMENT_CONFIG_PATH:-$BASE_PATH/config/$DEPLOYMENT_CONTEXT}/rollup.json}"
+
+# FORK_*_TIME 支持 "+N"（相对创世偏移）写法，在这里统一解析成绝对秒；
+# 顺带拦掉「分叉不晚于创世」这个会让 op-geth panic 的取值。规则见 lib/fork-times.sh。
+source "$SCRIPT_DIR/lib/fork-times.sh"
+resolve_fork_times "$ROLLUP_FILE" || exit 1
 
 # 硬分叉时间覆盖：从 .envrc 的单一真源 FORK_*_TIME 现场组装 --override.*。
 # 仅对非空项生成 override；用 ${VAR:+...} 纯参数展开，不受本脚本 set 选项影响。
