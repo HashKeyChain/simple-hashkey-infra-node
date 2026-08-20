@@ -224,6 +224,19 @@ export USE_FAULT_PROOFS=true
 export GAME_TYPE=1
 export RESPECTED_GAME_TYPE=$GAME_TYPE
 
+# ===== Flashblocks（本分支无消费者，但它不是死变量）=====
+# 本分支（cgt-jovian-engin-proxy）的脚本一处都不读 FLASHBLOCKS_MODE，但**别据此认为
+# 它可以随便填**：消费者在 flaskblocks 分支上，共十余处，其中决定性的一处是
+# scripts/chain-ops/run-op-node.sh —— 非 off 时它把 op-node 的 Engine 端点从 op-geth
+# 的 authrpc 改指向 rollup-boost（RB_ENGINE_PORT），chain-start.sh 还会顺带拉起
+# rollup-boost + op-rbuilder。
+#
+# 而 .envrc 是 gitignore 的，切分支不会跟着换，所以这个值一旦留成 dry_run/enabled，
+# 下次 checkout flaskblocks 就会静默改变 op-node 的 Engine 上游：想验证的中间件
+# （engine-api-proxy）直接不在链路上，验证却照样"通过" —— 又是一个假绿灯。
+# 验证 engine-api-proxy 时必须是 off。
+# export FLASHBLOCKS_MODE=off
+
 # ===== Hardfork activation times (single source of truth) =====
 # Configure once here. These FORK_*_TIME values are the single source of truth for
 # fork activation; both consumers derive from them:
