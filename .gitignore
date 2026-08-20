@@ -9,6 +9,20 @@ bin/*
 # geth database dir
 data
 
+# op-node p2p 身份与 libp2p 状态。
+# 这三个名字是 op-node 在**没有**收到 --p2p.priv.path / --p2p.peerstore.path /
+# --p2p.discovery.path 时用的默认值，且是相对当前工作目录的，所以从仓库根跑
+# op-node 就会把它们拉在这里。run-op-node.sh 现在显式指到 data/op-node/（已被上面
+# 的 data 覆盖），但默认值一旦因为漏传 flag 而重新生效，落点就又回到这里。
+#
+# opnode_p2p_priv.txt 是 **p2p 私钥明文**，opnode_peerstore_db/ 里还有一份同一把
+# 私钥的原始字节副本（实测在 *.ldb 与 *.log 里都能找到）。本仓库发生过一次
+# `git add -A` 把未跟踪文件整批提交进去的事故，所以这三项必须先在忽略名单里，
+# 不能只靠「记得别 add」。不写前导 / 是为了从子目录启动时也照样覆盖。
+opnode_p2p_priv.txt
+opnode_peerstore_db/
+opnode_discovery_db/
+
 nohup.out
 
 # ingore config files
