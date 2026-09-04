@@ -179,42 +179,55 @@ echo "  op-geth HTTP RPC 就绪"
 # 而 op-node 会连不上 Engine。这里显式 export，保证探测地址与 op-node 实际用的
 # 地址是同一个值，不会各自默认导致漂移。
 export L2_ENGINE_URL="${L2_ENGINE_URL:-http://localhost:$OP_GETH_AUTHRPC_PORT}"
+
+# 就绪探测只做 TCP 连接，**不发 HTTP 请求**。
+#
+# 原先这里发一个不带 JWT 的 eth_blockNumber，把「回 401」当唯一就绪信号。那个判据本身
+# 是对的，但它每次启动都会在被探的一方留下一条鉴权失败告警——而 L2_ENGINE_URL 指向
+# engine-api-proxy 时，那一方的日志正是排障要看的地方，往里塞一条每次都出现的
+# 「预期之内的告警」是在训练人忽略它。改成 TCP 连接后实测被探方零留痕。
+#
+# 代价：TCP 通只证明「有人在监听」，不再证明「监听的是带鉴权的 Engine 端点」。
+# 后者由下面那条静态断言接手 —— 它挡的是同一个错法，而且不发包、不等 30 秒超时、
+# 报错就在配置层面，比探测更早也更直接。
+engine_host="$(printf '%s' "$L2_ENGINE_URL" | sed -E 's#^[a-z]+://##; s#/.*$##; s#:.*$##')"
+engine_port="$(printf '%s' "$L2_ENGINE_URL" | sed -E 's#^[a-z]+://##; s#/.*$##; s#^[^:]*:?##')"
+engine_port="${engine_port:-80}"
+
+# 静态断言：Engine 端点不能是 op-geth 的公开 HTTP RPC。
+#
+# 这个错法必须在启动前挡住，因为 op-node 自己挡不住：它的启动自检
+# （rollup.ValidateL2Config = CheckL2ChainID + CheckL2GenesisBlockHash）只调
+# eth_chainId 与 eth_getBlockByNumber，而公开 RPC 这两个都正常返回。于是 op-node
+# 会自检通过、正常起来、日志一片正常，直到第一次 engine_forkchoiceUpdated 拿到
+# 「-32601 方法不存在」—— 一个离根因很远的运行期错误。实测确认过这三种应答。
+# 两个端口只差一个数字，这个错法有现实概率。
+if [ "$engine_port" = "$OP_GETH_HTTP_PORT" ]; then
+  echo "Error: L2_ENGINE_URL 指向了 op-geth 的公开 HTTP RPC（端口 $OP_GETH_HTTP_PORT），那里没有 engine_* 方法。"
+  echo "  直连 op-geth 应使用 authrpc 端口 $OP_GETH_AUTHRPC_PORT；"
+  echo "  若要经过 engine-api-proxy，则指向代理的监听端口。"
+  echo "  注意 op-node 自己发现不了这个错：它的启动自检只调 eth_* 方法，公开 RPC 全都能应答，"
+  echo "  所以它会正常启动，直到第一次 engine_forkchoiceUpdated 才失败。"
+  exit 1
+fi
+
 echo "Waiting for L2 engine endpoint at $L2_ENGINE_URL ..."
-# 就绪判据是「不带 JWT 的请求被回 401」，不是「有 HTTP 应答就算活」。
-# 401 同时证明三件事：端口有人监听、监听的是一个带 JWT 鉴权的 Engine 端点、
-# 鉴权真的在生效。实测：op-geth 的 authrpc 回 401、engine-api-proxy 回 401，
-# 而 op-geth 的公开 HTTP RPC(8645) 回 200 —— 所以「有应答就算活」这个宽判据
-# 会把探到 8645 也当成代理就绪，那正是这条检查要排掉的情形。
 engine_ready=0
-engine_code=""
-engine_saw_http=0
 for i in $(seq 1 30); do
-  engine_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
-    -X POST -H "Content-Type: application/json" \
-    --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
-    "$L2_ENGINE_URL" 2>/dev/null) || engine_code="000"
-  case "$engine_code" in
-    401)     engine_ready=1; break ;;   # 唯一的就绪信号
-    000|"")  : ;;                       # 连不上，继续等
-    *)       engine_saw_http=1 ;;       # 有人应答但不要 JWT，多半探错了东西
-  esac
+  if (exec 3<>"/dev/tcp/$engine_host/$engine_port") 2>/dev/null; then
+    exec 3>&- 2>/dev/null || true
+    engine_ready=1
+    break
+  fi
   sleep 1
 done
 if [ "$engine_ready" != "1" ]; then
-  if [ "$engine_saw_http" = "1" ]; then
-    echo "Error: Engine 端点 $L2_ENGINE_URL 有 HTTP 应答（最后一次 HTTP $engine_code），但不带 JWT 时不回 401。"
-    echo "  这说明那个端口不是一个带鉴权的 Engine 端点。最常见的两种错法："
-    echo "    1) 指到了 op-geth 的公开 HTTP RPC（$OP_GETH_HTTP_PORT，不鉴权，回 200），"
-    echo "       Engine/authrpc 应该是 $OP_GETH_AUTHRPC_PORT；"
-    echo "    2) 指到了别的服务 / 一个不校验入站 JWT 的中间件。"
-  else
-    echo "Error: Engine 端点 $L2_ENGINE_URL 30s 内无任何 HTTP 应答。"
-    echo "  若 L2_ENGINE_URL 指向中间件代理，请确认代理已先于本脚本启动。"
-  fi
+  echo "Error: Engine 端点 $L2_ENGINE_URL（$engine_host:$engine_port）30s 内无法建立 TCP 连接。"
+  echo "  若 L2_ENGINE_URL 指向中间件代理，请确认代理已先于本脚本启动。"
   echo "  op-geth 日志: $LOG_DIR/op-geth.log"
   exit 1
 fi
-echo "  engine endpoint 就绪 (无 JWT 请求回 HTTP 401 = 鉴权生效且进程存活)"
+echo "  engine endpoint 就绪 ($engine_host:$engine_port 可建立 TCP 连接)"
 sleep 2
 
 # ---------- 启动 op-node（组件 flags 见 run-op-node.sh）----------
